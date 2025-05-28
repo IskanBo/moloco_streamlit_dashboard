@@ -5,16 +5,26 @@ from datetime import datetime, timedelta, date
 import pytz
 from pycbrf.toolbox import ExchangeRates
 import plotly.express as px
+import re
+
+# ----------------------------------------
+# Утилиты
+# ----------------------------------------
+def clean_num(s: str) -> float:
+    """
+    Преобразует строку вида "42 525,23" или "42 525,23" в float 42525.23
+    Убирает любые пробельные символы и заменяет запятую на точку.
+    """
+    # удаляем все пробельные символы, включая неразрывный пробел
+    t = re.sub(r"\s+", "", s)
+    return float(t.replace(',', '.'))
 
 # ----------------------------------------
 # Загрузка секретов из Streamlit
 # ----------------------------------------
-# Секция [google_service_account] в secrets.toml UI
 creds = st.secrets["google_service_account"]
-# Создаем клиента gspread из словаря
 client = gspread.service_account_from_dict(creds)
 
-# Остальные переменные из секций
 MOLOCO_SHEET_ID        = st.secrets["MOLOCO_SHEET_ID"]
 OTHER_SOURCES_SHEET_ID = st.secrets["OTHER_SOURCES_SHEET_ID"]
 DASHBOARD_PASSWORD     = st.secrets["DASHBOARD_PASSWORD"]
@@ -66,10 +76,9 @@ def get_rates():
 # ----------------------------------------
 # Инициализация состояния
 # ----------------------------------------
-if 'moloco' not in st.session_state:
-    st.session_state['moloco'] = pd.DataFrame()
-if 'other' not in st.session_state:
-    st.session_state['other'] = pd.DataFrame()
+for key in ('moloco', 'other'):
+    if key not in st.session_state:
+        st.session_state[key] = pd.DataFrame()
 if 'loaded' not in st.session_state:
     st.session_state['loaded'] = False
 if 'last_update' not in st.session_state:
@@ -114,9 +123,9 @@ if menu == 'Главная':
 
         # Moloco KPI
         vals = df_m[df_m['event_time'] == prev_day]['cost']
-        curr = sum(float(v.strip().replace(',', '.')) for v in vals)
+        curr = sum(clean_num(v) for v in vals)
         prev_vals = df_m[df_m['event_time'] == prev_day - timedelta(days=1)]['cost']
-        prev_sum = sum(float(v.strip().replace(',', '.')) for v in prev_vals)
+        prev_sum = sum(clean_num(v) for v in prev_vals)
         delta = (curr - prev_sum) / prev_sum * 100 if prev_sum else 0
 
         col1, = st.columns([1])
@@ -130,9 +139,9 @@ if menu == 'Главная':
         items = []
         for src, grp in df_o.groupby('traffic_source'):
             current_vals = grp[grp['event_time'] == prev_day]['costs']
-            tot = sum(float(v.strip().replace(',', '.')) for v in current_vals)
+            tot = sum(clean_num(v) for v in current_vals)
             prev_vals_o = grp[grp['event_time'] == prev_day - timedelta(days=1)]['costs']
-            prev_sum_o = sum(float(v.strip().replace(',', '.')) for v in prev_vals_o)
+            prev_sum_o = sum(clean_num(v) for v in prev_vals_o)
             delta_src = (tot - prev_sum_o) / prev_sum_o * 100 if prev_sum_o else 0
             items.append((src, tot, delta_src))
 
@@ -147,7 +156,7 @@ if menu == 'Главная':
         st.divider()
         st.header('Тренд затрат Moloco')
         df_chart = df_m.copy()
-        df_chart['cost_num'] = df_chart['cost'].apply(lambda x: float(x.strip().replace(',', '.')))
+        df_chart['cost_num'] = df_chart['cost'].apply(clean_num)
         daily = df_chart.groupby('event_time')['cost_num'].sum().reset_index()
         end = daily['event_time'].max()
         start = end.replace(day=1)
