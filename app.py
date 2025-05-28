@@ -1,14 +1,27 @@
+import tempfile
+import json
+from datetime import datetime, timedelta, date
+import pytz
+
+import streamlit as st
+import pandas as pd
+import gspread
+from pycbrf.toolbox import ExchangeRates
+import plotly.express as px
+
 # ----------------------------------------
 # Чтение секретов из Streamlit Cloud
 # ----------------------------------------
-# Секция [google_credentials] должна быть задана в Secrets
+# 1) Словарь с ключами вашего service_account из Secrets → ключ google_credentials
 creds = st.secrets["google_credentials"]
+
+# Сохраняем его во временный файл, чтобы gspread мог прочитать
 tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".json")
 json.dump(creds, tmp)
 tmp.flush()
 GOOGLE_CREDENTIALS_PATH = tmp.name
 
-# Остальные переменные окружения в Secrets
+# 2) Остальные переменные тоже из Secrets
 MOLOCO_SHEET_ID        = st.secrets["MOLOCO_SHEET_ID"]
 OTHER_SOURCES_SHEET_ID = st.secrets["OTHER_SOURCES_SHEET_ID"]
 DASHBOARD_PASSWORD     = st.secrets["DASHBOARD_PASSWORD"]
