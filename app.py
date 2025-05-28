@@ -16,7 +16,7 @@ import plotly.express as px
 creds = json.loads(st.secrets["GOOGLE_CREDENTIALS_JSON"])
 
 # 2) Пишем их во временный файл для gspread
-tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".json")
+tmp = tempfile.NamedTemporaryFile(mode="w+", delete=False, suffix=".json")
 json.dump(creds, tmp)
 tmp.flush()
 GOOGLE_CREDENTIALS_PATH = tmp.name
