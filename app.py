@@ -7,6 +7,22 @@ from pycbrf.toolbox import ExchangeRates
 import plotly.express as px
 import re
 
+# ――――――― Авторизация через session_state ―――――――
+if "authenticated" not in st.session_state:
+    st.session_state.authenticated = False
+
+if not st.session_state.authenticated:
+    pwd = st.sidebar.text_input("Пароль", type="password", key="login_input")
+    if pwd == DASHBOARD_PASSWORD:
+        st.session_state.authenticated = True
+        st.experimental_rerun()
+    else:
+        st.sidebar.error("Неверный пароль")
+        st.stop()
+else:
+    st.sidebar.success("Вы авторизованы")
+# ――――――― конец блока авторизации ―――――――
+
 # ----------------------------------------
 # Утилиты
 # ----------------------------------------
@@ -28,15 +44,6 @@ client = gspread.service_account_from_dict(creds)
 MOLOCO_SHEET_ID        = st.secrets["MOLOCO_SHEET_ID"]
 OTHER_SOURCES_SHEET_ID = st.secrets["OTHER_SOURCES_SHEET_ID"]
 DASHBOARD_PASSWORD     = st.secrets["DASHBOARD_PASSWORD"]
-
-# ----------------------------------------
-# Защита паролем
-# ----------------------------------------
-st.sidebar.title("Авторизация")
-user_pass = st.sidebar.text_input("Пароль", type="password")
-if user_pass != DASHBOARD_PASSWORD:
-    st.sidebar.error("Неверный пароль")
-    st.stop()
 
 # ----------------------------------------
 # Функции загрузки данных
