@@ -1,27 +1,20 @@
-import tempfile
-import json
-from datetime import datetime, timedelta, date
-import pytz
-
 import streamlit as st
 import pandas as pd
 import gspread
+from datetime import datetime, timedelta, date
+import pytz
 from pycbrf.toolbox import ExchangeRates
 import plotly.express as px
 
 # ----------------------------------------
-# Чтение секретов из Streamlit Cloud
+# Загрузка секретов из Streamlit
 # ----------------------------------------
-# 1) Парсим JSON из секрета
+# Секция [google_service_account] в secrets.toml
 creds = st.secrets["google_service_account"]
+# Создаем клиента gspread из словаря
+client = gspread.service_account_from_dict(creds)
 
-# 2) Пишем их во временный файл для gspread
-tmp = tempfile.NamedTemporaryFile(mode="w+", delete=False, suffix=".json")
-json.dump(creds, tmp)
-tmp.flush()
-GOOGLE_CREDENTIALS_PATH = tmp.name
-
-# 3) Остальные переменные окружения
+# Остальные переменные из секций
 MOLOCO_SHEET_ID        = st.secrets["MOLOCO_SHEET_ID"]
 OTHER_SOURCES_SHEET_ID = st.secrets["OTHER_SOURCES_SHEET_ID"]
 DASHBOARD_PASSWORD     = st.secrets["DASHBOARD_PASSWORD"]
@@ -40,14 +33,13 @@ if user_pass != DASHBOARD_PASSWORD:
 # ----------------------------------------
 @st.cache_data(show_spinner=False)
 def fetch_moloco_raw():
-    client = gspread.service_account(filename=GOOGLE_CREDENTIALS_PATH)
     sh = client.open_by_key(MOLOCO_SHEET_ID)
     rows = []
     for ws in sh.worksheets():
         vals = ws.get_all_values()
         header = vals[0]
-        for row in vals[1:]:
-            rows.append(dict(zip(header, row)))
+        for r in vals[1:]:
+            rows.append(dict(zip(header, r)))
     df = pd.DataFrame(rows)
     if not df.empty:
         df['traffic_source'] = 'Moloco'
@@ -55,7 +47,6 @@ def fetch_moloco_raw():
 
 @st.cache_data(show_spinner=False)
 def fetch_other_raw():
-    client = gspread.service_account(filename=GOOGLE_CREDENTIALS_PATH)
     sh = client.open_by_key(OTHER_SOURCES_SHEET_ID)
     vals = sh.get_worksheet(0).get_all_values()
     header = vals[0]
@@ -136,10 +127,10 @@ if menu == 'Главная':
         df_o['event_time'] = pd.to_datetime(df_o.get('event_date', df_o.get('event_time'))).dt.date
         items = []
         for src, grp in df_o.groupby('traffic_source'):
-            current_vals = grp[grp['event_time'] == prev_day]['costs']
-            tot = sum(float(v.replace(' ', '').replace(' ', '').replace(',', '.')) for v in current_vals)
+            curr_vals = grp[grp['event_time'] == prev_day]['costs']
+            tot = sum(float(v.replace(' ', '').replace(',', '.')) for v in curr_vals)
             prev_vals_o = grp[grp['event_time'] == prev_day - timedelta(days=1)]['costs']
-            prev_sum_o = sum(float(v.replace(' ', '').replace(' ', '').replace(',', '.')) for v in prev_vals_o)
+            prev_sum_o = sum(float(v.replace(' ', '').replace(',', '.')) for v in prev_vals_o)
             delta_src = (tot - prev_sum_o) / prev_sum_o * 100 if prev_sum_o else 0
             items.append((src, tot, delta_src))
         half = (len(items) + 1) // 2
@@ -152,7 +143,7 @@ if menu == 'Главная':
         st.divider()
         st.header('Тренд затрат Moloco')
         df_chart = df_m.copy()
-        df_chart['cost_num'] = df_chart['cost'].apply(lambda x: float(x.replace(' ', '').replace(' ', '').replace(',', '.')))
+        df_chart['cost_num'] = df_chart['cost'].apply(lambda x: float(x.replace(' ', '').replace(',', '.')))
         daily = df_chart.groupby('event_time')['cost_num'].sum().reset_index()
         end = daily['event_time'].max()
         start = end.replace(day=1)
@@ -161,7 +152,7 @@ if menu == 'Главная':
         fig.update_layout(
             xaxis=dict(rangeslider=dict(visible=True), range=[start, end], tickformat='%d %b'),
             yaxis=dict(tickformat=',.0f'),
-            margin=dict(l=20,r=20,t=30,b=20)
+            margin=dict(l=20, r=20, t=30, b=20)
         )
         st.plotly_chart(fig, use_container_width=True)
 
