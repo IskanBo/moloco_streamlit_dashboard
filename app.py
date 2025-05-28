@@ -1,13 +1,27 @@
 import streamlit as st
 import pandas as pd
 import gspread
+import json
 from datetime import datetime, timedelta, date
 import pytz
 from pycbrf.toolbox import ExchangeRates
 import plotly.express as px
 import re
 
-# ――――――― Авторизация через session_state ―――――――
+# ----------------------------------------
+# Загрузка секретов из Streamlit
+# ----------------------------------------
+creds = st.secrets["google_service_account"]
+client = gspread.service_account_from_dict(creds)
+
+# Остальные переменные из секрета
+MOLOCO_SHEET_ID        = st.secrets["MOLOCO_SHEET_ID"]
+OTHER_SOURCES_SHEET_ID = st.secrets["OTHER_SOURCES_SHEET_ID"]
+DASHBOARD_PASSWORD     = st.secrets["DASHBOARD_PASSWORD"]
+
+# ----------------------------------------
+# Авторизация через session_state
+# ----------------------------------------
 if "authenticated" not in st.session_state:
     st.session_state.authenticated = False
 
@@ -21,29 +35,16 @@ if not st.session_state.authenticated:
         st.stop()
 else:
     st.sidebar.success("Вы авторизованы")
-# ――――――― конец блока авторизации ―――――――
 
 # ----------------------------------------
 # Утилиты
 # ----------------------------------------
 def clean_num(s: str) -> float:
     """
-    Преобразует строку вида "42 525,23" или "42 525,23" в float 42525.23
-    Убирает любые пробельные символы и заменяет запятую на точку.
+    Убирает пробелы и конвертирует строку с запятой в float
     """
-    # удаляем все пробельные символы, включая неразрывный пробел
     t = re.sub(r"\s+", "", s)
     return float(t.replace(',', '.'))
-
-# ----------------------------------------
-# Загрузка секретов из Streamlit
-# ----------------------------------------
-creds = st.secrets["google_service_account"]
-client = gspread.service_account_from_dict(creds)
-
-MOLOCO_SHEET_ID        = st.secrets["MOLOCO_SHEET_ID"]
-OTHER_SOURCES_SHEET_ID = st.secrets["OTHER_SOURCES_SHEET_ID"]
-DASHBOARD_PASSWORD     = st.secrets["DASHBOARD_PASSWORD"]
 
 # ----------------------------------------
 # Функции загрузки данных
@@ -128,7 +129,6 @@ if menu == 'Главная':
         prev_day = latest - timedelta(days=1)
         st.markdown(f"**Дата:** {prev_day}")
 
-        # Moloco KPI
         vals = df_m[df_m['event_time'] == prev_day]['cost']
         curr = sum(clean_num(v) for v in vals)
         prev_vals = df_m[df_m['event_time'] == prev_day - timedelta(days=1)]['cost']
@@ -140,7 +140,6 @@ if menu == 'Главная':
             st.subheader('Moloco')
             st.metric('', f'${int(curr):,}'.replace(',', ' '), delta=f'{delta:+.1f}%')
 
-        # Other sources KPI
         df_o = st.session_state['other'].copy()
         df_o['event_time'] = pd.to_datetime(df_o.get('event_date', df_o.get('event_time'))).dt.date
         items = []
@@ -159,7 +158,6 @@ if menu == 'Главная':
                 col.markdown(f"**{src}**")
                 col.metric('', f'{int(total):,}'.replace(',', ' '), delta=f'{d:+.1f}%')
 
-        # Trend chart
         st.divider()
         st.header('Тренд затрат Moloco')
         df_chart = df_m.copy()
