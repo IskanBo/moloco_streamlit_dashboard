@@ -9,7 +9,7 @@ import plotly.express as px
 # ----------------------------------------
 # Загрузка секретов из Streamlit
 # ----------------------------------------
-# Секция [google_service_account] в secrets.toml
+# Секция [google_service_account] в secrets.toml UI
 creds = st.secrets["google_service_account"]
 # Создаем клиента gspread из словаря
 client = gspread.service_account_from_dict(creds)
@@ -112,10 +112,11 @@ if menu == 'Главная':
         prev_day = latest - timedelta(days=1)
         st.markdown(f"**Дата:** {prev_day}")
 
+        # Moloco KPI
         vals = df_m[df_m['event_time'] == prev_day]['cost']
-        curr = sum(float(v.replace(' ', '').replace(',', '.')) for v in vals)
+        curr = sum(float(v.strip().replace(',', '.')) for v in vals)
         prev_vals = df_m[df_m['event_time'] == prev_day - timedelta(days=1)]['cost']
-        prev_sum = sum(float(v.replace(' ', '').replace(',', '.')) for v in prev_vals)
+        prev_sum = sum(float(v.strip().replace(',', '.')) for v in prev_vals)
         delta = (curr - prev_sum) / prev_sum * 100 if prev_sum else 0
 
         col1, = st.columns([1])
@@ -123,16 +124,18 @@ if menu == 'Главная':
             st.subheader('Moloco')
             st.metric('', f'${int(curr):,}'.replace(',', ' '), delta=f'{delta:+.1f}%')
 
+        # Other sources KPI
         df_o = st.session_state['other'].copy()
         df_o['event_time'] = pd.to_datetime(df_o.get('event_date', df_o.get('event_time'))).dt.date
         items = []
         for src, grp in df_o.groupby('traffic_source'):
-            curr_vals = grp[grp['event_time'] == prev_day]['costs']
-            tot = sum(float(v.replace(' ', '').replace(',', '.')) for v in curr_vals)
+            current_vals = grp[grp['event_time'] == prev_day]['costs']
+            tot = sum(float(v.strip().replace(',', '.')) for v in current_vals)
             prev_vals_o = grp[grp['event_time'] == prev_day - timedelta(days=1)]['costs']
-            prev_sum_o = sum(float(v.replace(' ', '').replace(',', '.')) for v in prev_vals_o)
+            prev_sum_o = sum(float(v.strip().replace(',', '.')) for v in prev_vals_o)
             delta_src = (tot - prev_sum_o) / prev_sum_o * 100 if prev_sum_o else 0
             items.append((src, tot, delta_src))
+
         half = (len(items) + 1) // 2
         for row in [items[:half], items[half:]]:
             cols = st.columns(len(row), gap='small')
@@ -140,14 +143,21 @@ if menu == 'Главная':
                 col.markdown(f"**{src}**")
                 col.metric('', f'{int(total):,}'.replace(',', ' '), delta=f'{d:+.1f}%')
 
+        # Trend chart
         st.divider()
         st.header('Тренд затрат Moloco')
         df_chart = df_m.copy()
-        df_chart['cost_num'] = df_chart['cost'].apply(lambda x: float(x.replace(' ', '').replace(',', '.')))
+        df_chart['cost_num'] = df_chart['cost'].apply(lambda x: float(x.strip().replace(',', '.')))
         daily = df_chart.groupby('event_time')['cost_num'].sum().reset_index()
         end = daily['event_time'].max()
         start = end.replace(day=1)
-        fig = px.line(daily, x='event_time', y='cost_num', labels={'event_time':'Дата','cost_num':'Затраты'}, markers=True)
+        fig = px.line(
+            daily,
+            x='event_time',
+            y='cost_num',
+            labels={'event_time':'Дата', 'cost_num':'Затраты'},
+            markers=True
+        )
         fig.update_traces(marker=dict(size=4), line=dict(width=2))
         fig.update_layout(
             xaxis=dict(rangeslider=dict(visible=True), range=[start, end], tickformat='%d %b'),
