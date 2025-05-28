@@ -12,16 +12,17 @@ import plotly.express as px
 # ----------------------------------------
 # Чтение секретов из Streamlit Cloud
 # ----------------------------------------
-# 1) Словарь с ключами вашего service_account из Secrets → ключ google_credentials
-creds = st.secrets["google_credentials"]
+# 1) Загружаем JSON-строку из Secrets и парсим
+json_str = st.secrets["GOOGLE_CREDENTIALS_JSON"]
+creds = json.loads(json_str)
 
-# Сохраняем его во временный файл, чтобы gspread мог прочитать
+# 2) Пишем в temp-файл для gspread
 tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".json")
-json.dump(creds, tmp)
+tmp.write(json_str.encode("utf-8"))
 tmp.flush()
 GOOGLE_CREDENTIALS_PATH = tmp.name
 
-# 2) Остальные переменные тоже из Secrets
+# 3) Остальные секреты
 MOLOCO_SHEET_ID        = st.secrets["MOLOCO_SHEET_ID"]
 OTHER_SOURCES_SHEET_ID = st.secrets["OTHER_SOURCES_SHEET_ID"]
 DASHBOARD_PASSWORD     = st.secrets["DASHBOARD_PASSWORD"]
@@ -35,17 +36,19 @@ if user_pass != DASHBOARD_PASSWORD:
     st.sidebar.error("Неверный пароль")
     st.stop()
 
-# Data fetching functions
+# ----------------------------------------
+# Функции загрузки данных
+# ----------------------------------------
 @st.cache_data(show_spinner=False)
 def fetch_moloco_raw():
-    client = gspread.service_account(filename=os.getenv("GOOGLE_APPLICATION_CREDENTIALS"))
-    sh = client.open_by_key(os.getenv("MOLOCO_SHEET_ID"))
+    client = gspread.service_account(filename=GOOGLE_CREDENTIALS_PATH)
+    sh = client.open_by_key(MOLOCO_SHEET_ID)
     rows = []
     for ws in sh.worksheets():
         vals = ws.get_all_values()
         header = vals[0]
-        for r in vals[1:]:
-            rows.append(dict(zip(header, r)))
+        for row in vals[1:]:
+            rows.append(dict(zip(header, row)))
     df = pd.DataFrame(rows)
     if not df.empty:
         df['traffic_source'] = 'Moloco'
@@ -53,8 +56,8 @@ def fetch_moloco_raw():
 
 @st.cache_data(show_spinner=False)
 def fetch_other_raw():
-    client = gspread.service_account(filename=os.getenv("GOOGLE_APPLICATION_CREDENTIALS"))
-    sh = client.open_by_key(os.getenv("OTHER_SOURCES_SHEET_ID"))
+    client = gspread.service_account(filename=GOOGLE_CREDENTIALS_PATH)
+    sh = client.open_by_key(OTHER_SOURCES_SHEET_ID)
     vals = sh.get_worksheet(0).get_all_values()
     header = vals[0]
     df = pd.DataFrame(vals[1:], columns=header)
@@ -67,10 +70,12 @@ def get_rates():
     try:
         rates = ExchangeRates(date.today())
         return rates['USD'].value, rates['EUR'].value
-    except:
+    except Exception:
         return None, None
 
-# Initialize state
+# ----------------------------------------
+# Инициализация состояния
+# ----------------------------------------
 if 'moloco' not in st.session_state:
     st.session_state['moloco'] = pd.DataFrame()
 if 'other' not in st.session_state:
@@ -80,52 +85,54 @@ if 'loaded' not in st.session_state:
 if 'last_update' not in st.session_state:
     st.session_state['last_update'] = None
 
-# Sidebar navigation and rates
+# ----------------------------------------
+# Боковое меню и курсы валют
+# ----------------------------------------
 st.sidebar.title('Навигация')
-menu = st.sidebar.radio('', ['Главная', 'Диаграммы', 'Сводные таблицы', 'Сырые данные'], index=0)
+menu = st.sidebar.radio('', ['Главная', 'Диаграммы', 'Сводные таблицы', 'Сырые данные'])
 st.sidebar.markdown('---')
-# Currency rates
+
 usd, eur = get_rates()
 st.sidebar.caption(f'USD/RUB: {usd:.2f}' if usd is not None else 'USD/RUB: —')
 st.sidebar.caption(f'EUR/RUB: {eur:.2f}' if eur is not None else 'EUR/RUB: —')
-# Update button at bottom
 st.sidebar.markdown('---')
+
 if st.sidebar.button('Обновить'):
     st.session_state['moloco'] = fetch_moloco_raw()
     st.session_state['other'] = fetch_other_raw()
     st.session_state['loaded'] = True
     st.session_state['last_update'] = datetime.now(pytz.timezone('Europe/Moscow'))
+
 if st.session_state['last_update']:
     st.sidebar.caption(st.session_state['last_update'].strftime('Обновлено: %Y-%m-%d %H:%M'))
 st.sidebar.caption('✅ Данные загружены' if st.session_state['loaded'] else '❌ Данные не загружены')
 
-# Main view
+# ----------------------------------------
+# Основная часть приложения
+# ----------------------------------------
 if menu == 'Главная':
     st.title('Dashboard: Затраты рекламы')
-    st.markdown('''
-    Добро пожаловать в дашборд управления затратами по рекламным кампаниям.
-    Здесь вы можете видеть ключевые метрики и тренды по источнику Moloco и другим платформам.
-    ''')
+    st.markdown('Добро пожаловать в дашборд управления затратами по рекламным кампаниям.')
     if not st.session_state['loaded']:
         st.info('Нажмите «Обновить» в боковом меню, чтобы загрузить данные')
     else:
-        # Compute date and KPIs
         df_m = st.session_state['moloco'].copy()
         df_m['event_time'] = pd.to_datetime(df_m['event_time']).dt.date
         latest = df_m['event_time'].max()
         prev_day = latest - timedelta(days=1)
         st.markdown(f"**Дата:** {prev_day}")
-        # Moloco KPI
+
         vals = df_m[df_m['event_time'] == prev_day]['cost']
         curr = sum(float(v.replace(' ', '').replace(',', '.')) for v in vals)
         prev_vals = df_m[df_m['event_time'] == prev_day - timedelta(days=1)]['cost']
         prev_sum = sum(float(v.replace(' ', '').replace(',', '.')) for v in prev_vals)
         delta = (curr - prev_sum) / prev_sum * 100 if prev_sum else 0
+
         col1, = st.columns([1])
         with col1:
             st.subheader('Moloco')
-            st.metric('', f'${int(curr):,}'.replace(',', ' '), delta=f'{delta:+.1f}%', label_visibility='collapsed')
-        # Other sources KPI
+            st.metric('', f'${int(curr):,}'.replace(',', ' '), delta=f'{delta:+.1f}%')
+
         df_o = st.session_state['other'].copy()
         df_o['event_time'] = pd.to_datetime(df_o.get('event_date', df_o.get('event_time'))).dt.date
         items = []
@@ -141,8 +148,8 @@ if menu == 'Главная':
             cols = st.columns(len(row), gap='small')
             for (src, total, d), col in zip(row, cols):
                 col.markdown(f"**{src}**")
-                col.metric('', f'{int(total):,}'.replace(',', ' '), delta=f'{d:+.1f}%', label_visibility='collapsed')
-        # Trend chart
+                col.metric('', f'{int(total):,}'.replace(',', ' '), delta=f'{d:+.1f}%')
+
         st.divider()
         st.header('Тренд затрат Moloco')
         df_chart = df_m.copy()
