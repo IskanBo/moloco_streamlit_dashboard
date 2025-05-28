@@ -9,7 +9,6 @@ build/
 
 # Env и секреты
 .env
-.env.template
 service-account.json
 secrets.toml
 
