@@ -27,11 +27,15 @@ if "authenticated" not in st.session_state:
 
 if not st.session_state.authenticated:
     pwd = st.sidebar.text_input("Пароль", type="password", key="login_input")
-    if pwd == DASHBOARD_PASSWORD:
-        st.session_state.authenticated = True
-        st.experimental_rerun()
+    if pwd:
+        if pwd == DASHBOARD_PASSWORD:
+            st.session_state.authenticated = True
+            # не нужно st.experimental_rerun()
+        else:
+            st.sidebar.error("Неверный пароль")
+            st.stop()
     else:
-        st.sidebar.error("Неверный пароль")
+        # пока пользователь ничего не ввёл — просто останавливаемся
         st.stop()
 else:
     st.sidebar.success("Вы авторизованы")
