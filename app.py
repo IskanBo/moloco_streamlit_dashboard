@@ -12,17 +12,16 @@ import plotly.express as px
 # ----------------------------------------
 # Чтение секретов из Streamlit Cloud
 # ----------------------------------------
-# 1) Загружаем JSON-строку из Secrets и парсим
-json_str = st.secrets["GOOGLE_CREDENTIALS_JSON"]
-creds = json.loads(json_str)
+# 1) Парсим JSON из секрета
+creds = json.loads(st.secrets["GOOGLE_CREDENTIALS_JSON"])
 
-# 2) Пишем в temp-файл для gspread
+# 2) Пишем их во временный файл для gspread
 tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".json")
-tmp.write(json_str.encode("utf-8"))
+json.dump(creds, tmp)
 tmp.flush()
 GOOGLE_CREDENTIALS_PATH = tmp.name
 
-# 3) Остальные секреты
+# 3) Остальные переменные окружения
 MOLOCO_SHEET_ID        = st.secrets["MOLOCO_SHEET_ID"]
 OTHER_SOURCES_SHEET_ID = st.secrets["OTHER_SOURCES_SHEET_ID"]
 DASHBOARD_PASSWORD     = st.secrets["DASHBOARD_PASSWORD"]
