@@ -1,0 +1,23 @@
+# Python cache and compiled files
+__pycache__/
+*.py[cod]
+
+# Packaging
+*.egg-info/
+dist/
+build/
+
+# Env и секреты
+.env
+.env.template
+service-account.json
+secrets.toml
+
+# Virtual environments
+venv/
+.venv/
+
+# IDE и OS
+.DS_Store
+Thumbs.db
+
