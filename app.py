@@ -1,4 +1,6 @@
 import os
+import tempfile
+import json
 from datetime import datetime, timedelta, date
 import pytz
 
@@ -6,16 +8,28 @@ import streamlit as st
 import pandas as pd
 import gspread
 from pycbrf.toolbox import ExchangeRates
-from dotenv import load_dotenv
 import plotly.express as px
 
-# Load environment variables
-load_dotenv()
+# ----------------------------------------
+# Чтение секретов из Streamlit Cloud
+# ----------------------------------------
+# 1) JSON-ключ сервисного аккаунта
+creds = json.loads(st.secrets["GOOGLE_CREDENTIALS_JSON"])
+tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".json")
+tmp.write(json.dumps(creds).encode("utf-8"))
+GOOGLE_CREDENTIALS_PATH = tmp.name
 
-# Password protection
-PASSWORD = os.getenv("DASHBOARD_PASSWORD", "your_default_password")
+# 2) Другие переменные
+MOLOCO_SHEET_ID        = st.secrets["MOLOCO_SHEET_ID"]
+OTHER_SOURCES_SHEET_ID = st.secrets["OTHER_SOURCES_SHEET_ID"]
+DASHBOARD_PASSWORD     = st.secrets["DASHBOARD_PASSWORD"]
+
+# ----------------------------------------
+# Защита паролем
+# ----------------------------------------
+st.sidebar.title("Авторизация")
 user_pass = st.sidebar.text_input("Пароль", type="password")
-if user_pass != PASSWORD:
+if user_pass != DASHBOARD_PASSWORD:
     st.sidebar.error("Неверный пароль")
     st.stop()
 
