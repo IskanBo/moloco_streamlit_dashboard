@@ -13,7 +13,8 @@ import plotly.express as px
 # Чтение секретов из Streamlit Cloud
 # ----------------------------------------
 # 1) Парсим JSON из секрета
-creds = st.secrets["google_credentials"]
+json_str = st.secrets["GOOGLE_CREDENTIALS_JSON"]
+creds    = json.loads(json_str)
 
 # 2) Пишем их во временный файл для gspread
 tmp = tempfile.NamedTemporaryFile(mode="w+", delete=False, suffix=".json")
