@@ -119,6 +119,7 @@ if menu == 'Главная':
         # Moloco KPI (более крупный блок)
         vals = df_m[df_m['event_time']==prev_day]['cost']
         curr_usd = sum(clean_num(v) for v in vals)
+        curr_rub = curr_usd * usd_rate if usd_rate is not None else None
         curr_rub = curr_usd * usd_rate if usd_rate else None
         prev_vals = df_m[df_m['event_time']==prev_day-timedelta(days=1)]['cost']
         prev_sum_usd = sum(clean_num(v) for v in prev_vals)
