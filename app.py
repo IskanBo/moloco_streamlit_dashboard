@@ -143,6 +143,7 @@ if menu == 'Главная':
         prev_day = latest - timedelta(days=1)
         st.markdown(f"**Дата:** {prev_day}")
 
+        # Moloco KPI
         vals = df_m[df_m['event_time'] == prev_day]['cost']
         curr = sum(clean_num(v) for v in vals)
         prev_vals = df_m[df_m['event_time'] == prev_day - timedelta(days=1)]['cost']
@@ -154,6 +155,7 @@ if menu == 'Главная':
             st.subheader('Moloco')
             st.metric('', f'${int(curr):,}'.replace(',', ' '), delta=f'{delta:+.1f}%')
 
+        # Other sources KPI
         df_o = st.session_state['other'].copy()
         df_o['event_time'] = pd.to_datetime(df_o.get('event_date', df_o.get('event_time'))).dt.date
         items = []
@@ -172,11 +174,15 @@ if menu == 'Главная':
                 col.markdown(f"**{src}**")
                 col.metric('', f'{int(total):,}'.replace(',', ' '), delta=f'{d:+.1f}%')
 
+        # Trend chart без сегодняшних данных
         st.divider()
         st.header('Тренд затрат Moloco')
         df_chart = df_m.copy()
         df_chart['cost_num'] = df_chart['cost'].apply(clean_num)
         daily = df_chart.groupby('event_time')['cost_num'].sum().reset_index()
+        # исключаем сегодняшнюю дату, чтобы не искажать тренд
+        today = datetime.now(pytz.timezone('Europe/Moscow')).date()
+        daily = daily[daily['event_time'] < today]
         end = daily['event_time'].max()
         start = end.replace(day=1)
         fig = px.line(
