@@ -120,8 +120,7 @@ if menu == 'Главная':
         vals = df_m[df_m['event_time']==prev_day]['cost']
         curr_usd = sum(clean_num(v) for v in vals)
         curr_rub = curr_usd * usd_rate if usd_rate is not None else None
-        curr_rub = curr_usd * usd_rate if usd_rate else None
-        prev_vals = df_m[df_m['event_time']==prev_day-timedelta(days=1)]['cost']
+        prev_vals = df_m[df_m['event_time']==prev_day-timedelta(days=1)]['cost'] df_m[df_m['event_time']==prev_day-timedelta(days=1)]['cost']
         prev_sum_usd = sum(clean_num(v) for v in prev_vals)
         prev_sum_rub = prev_sum_usd * usd_rate if usd_rate else None
         delta_pct = (curr_rub - prev_sum_rub)/prev_sum_rub*100 if prev_sum_rub else 0
