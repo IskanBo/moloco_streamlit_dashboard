@@ -22,21 +22,30 @@ DASHBOARD_PASSWORD     = st.secrets["DASHBOARD_PASSWORD"]
 # ----------------------------------------
 # Авторизация через session_state
 # ----------------------------------------
-params = st.experimental_get_query_params()
+# 1) Читаем query-параметры
+params = st.query_params
+
+# 2) Если в URL уже есть auth=1, сразу ставим флаг
 if params.get("auth", ["0"])[0] == "1":
     st.session_state.authenticated = True
 
+# 3) Инициализируем флаг, если его нет
 if "authenticated" not in st.session_state:
     st.session_state.authenticated = False
 
+# 4) Если не авторизован — показываем форму
 if not st.session_state.authenticated:
-    pwd = st.sidebar.text_input("Пароль", type="password")
-    if pwd == DASHBOARD_PASSWORD:
-        st.session_state.authenticated = True
-        st.experimental_set_query_params(auth="1")
-        st.experimental_rerun()
+    pwd = st.sidebar.text_input("Пароль", type="password", key="login_input")
+    if pwd:
+        if pwd == DASHBOARD_PASSWORD:
+            st.session_state.authenticated = True
+            # записываем в URL ?auth=1
+            st.query_params = {"auth": ["1"]}
+        else:
+            st.sidebar.error("Неверный пароль")
+            st.stop()
     else:
-        st.sidebar.error("Неверный пароль")
+        # пока не ввели пароль — ничего не делаем
         st.stop()
 else:
     st.sidebar.success("Вы авторизованы")
