@@ -144,7 +144,8 @@ if menu == 'Главная':
         col1, = st.columns([1])
         with col1:
             st.subheader('Moloco')
-            st.metric('', f'${int(curr):,}'.replace(',', ' '), delta=f'{delta:+.1f}%')
+            # Значок $ после цифр
+            st.metric('', f'{int(curr):,} $'.replace(',', ' '), delta=f'{delta:+.1f}%')
 
         # Other sources KPI
         df_o = st.session_state['other'].copy()
@@ -163,14 +164,14 @@ if menu == 'Главная':
             cols = st.columns(len(row), gap='small')
             for (src, total, d), col in zip(row, cols):
                 col.markdown(f"**{src}**")
-                col.metric('', f'{int(total):,}'.replace(',', ' '), delta=f'{d:+.1f}%')
+                # Значок рубля после цифр
+                col.metric('', f'{int(total):,} ₽'.replace(',', ' '), delta=f'{d:+.1f}%')
 
         st.divider()
         st.header('Тренд затрат Moloco')
         df_chart = df_m.copy()
         df_chart['cost_num'] = df_chart['cost'].apply(clean_num)
         daily = df_chart.groupby('event_time')['cost_num'].sum().reset_index()
-        # исключаем сегодняшнюю дату, чтобы не искажать тренд
         today = datetime.now(pytz.timezone('Europe/Moscow')).date()
         daily = daily[daily['event_time'] < today]
         end = daily['event_time'].max()
