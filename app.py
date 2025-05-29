@@ -22,26 +22,27 @@ DASHBOARD_PASSWORD     = st.secrets["DASHBOARD_PASSWORD"]
 # ----------------------------------------
 # Авторизация через session_state
 # ----------------------------------------
+params = st.experimental_get_query_params()
+if params.get("auth", ["0"])[0] == "1":
+    st.session_state.authenticated = True
+
 if "authenticated" not in st.session_state:
     st.session_state.authenticated = False
 
 if not st.session_state.authenticated:
-    pwd = st.sidebar.text_input("Пароль", type="password", key="login_input")
-    if pwd:
-        if pwd == DASHBOARD_PASSWORD:
-            st.session_state.authenticated = True
-            # не нужно st.experimental_rerun()
-        else:
-            st.sidebar.error("Неверный пароль")
-            st.stop()
+    pwd = st.sidebar.text_input("Пароль", type="password")
+    if pwd == DASHBOARD_PASSWORD:
+        st.session_state.authenticated = True
+        st.experimental_set_query_params(auth="1")
+        st.experimental_rerun()
     else:
-        # пока пользователь ничего не ввёл — просто останавливаемся
+        st.sidebar.error("Неверный пароль")
         st.stop()
 else:
     st.sidebar.success("Вы авторизованы")
 
 # ----------------------------------------
-# Утилиты
+# Утилиты для предобработки строки
 # ----------------------------------------
 def clean_num(s: str) -> float:
     """
