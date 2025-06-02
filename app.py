@@ -245,71 +245,98 @@ if menu == "Главная":
                     unsafe_allow_html=True,
                 )
 
-        # ----------------------------------------
-        # Тренд затрат по источникам (в ₽)
-        # ----------------------------------------
-        st.divider()
-        st.header("Тренд затрат по источникам (в ₽)")
+                # ----------------------------------------
+                # Тренд затрат по источникам (в ₽)
+                # ----------------------------------------
+                st.divider()
+                st.header("Тренд затрат по источникам")
 
-        # Подготовка Moloco (USD→RUB)
-        moloco_df = df_m.copy()
-        moloco_df["cost_num_usd"] = moloco_df["cost"].apply(clean_num)
-        if usd_rate is not None:
-            moloco_df["cost_rub"] = moloco_df["cost_num_usd"] * usd_rate
-        else:
-            moloco_df["cost_rub"] = float("nan")
-        moloco_daily = (
-            moloco_df.groupby("event_time")["cost_rub"]
-            .sum()
-            .reset_index()
-            .assign(traffic_source="Moloco")
-        )
+                # Подготовка Moloco (USD→RUB)
+                moloco_df = df_m.copy()
+                moloco_df["cost_num_usd"] = moloco_df["cost"].apply(clean_num)
+                if usd_rate is not None:
+                    moloco_df["cost_rub"] = moloco_df["cost_num_usd"] * usd_rate
+                else:
+                    moloco_df["cost_rub"] = float("nan")
+                moloco_daily = (
+                    moloco_df.groupby("event_time")["cost_rub"]
+                    .sum()
+                    .reset_index()
+                    .assign(traffic_source="Moloco")
+                )
 
-        # Подготовка Other (в рублях уже)
-        other_df = st.session_state["other"].copy()
-        other_df["event_time"] = pd.to_datetime(
-            other_df.get("event_date", other_df.get("event_time"))
-        ).dt.date
-        other_df["cost_num"] = other_df["costs"].apply(clean_num)
-        other_daily = (
-            other_df.groupby(["event_time", "traffic_source"])["cost_num"]
-            .sum()
-            .reset_index()
-            .rename(columns={"cost_num": "cost_rub"})
-        )
+                # Подготовка Other (в рублях уже)
+                other_df = st.session_state["other"].copy()
+                other_df["event_time"] = pd.to_datetime(
+                    other_df.get("event_date", other_df.get("event_time"))
+                ).dt.date
+                other_df["cost_num"] = other_df["costs"].apply(clean_num)
+                other_daily = (
+                    other_df.groupby(["event_time", "traffic_source"])["cost_num"]
+                    .sum()
+                    .reset_index()
+                    .rename(columns={"cost_num": "cost_rub"})
+                )
 
-        # Объединяем Moloco и Other
-        chart_df = pd.concat([moloco_daily, other_daily], ignore_index=True)
+                # Объединяем Moloco и Other
+                chart_df = pd.concat([moloco_daily, other_daily], ignore_index=True)
 
-        # Пользователь выбирает, какие источники отображать
-        all_sources = chart_df["traffic_source"].unique().tolist()
-        selected = st.multiselect(
-            "Выберите источники для графика",
-            options=all_sources,
-            default=all_sources,
-            key="sel_sources",
-        )
+                # 1) Список всех уникальных источников
+                all_sources = chart_df["traffic_source"].unique().tolist()
 
-        filtered = chart_df[chart_df["traffic_source"].isin(selected)].copy()
+                # 2) По умолчанию оставляем только Moloco
+                default_selection = ["Moloco"] if "Moloco" in all_sources else all_sources
 
-        if not filtered.empty:
-            fig = px.line(
-                filtered,
-                x="event_time",
-                y="cost_rub",
-                color="traffic_source",
-                labels={
-                    "event_time": "Дата",
-                    "cost_rub": "Затраты (₽)",
-                    "traffic_source": "Источник",
-                },
-            )
-            fig.update_layout(colorway=px.colors.qualitative.Pastel)
-            fig.update_traces(marker=dict(size=4), line=dict(width=2))
-            fig.update_yaxes(tickformat=",.0f")
-            st.plotly_chart(fig, use_container_width=True)
-        else:
-            st.info("Выберите хотя бы один источник для отображения графика.")
+                # 3) Мультiselect для выбора источников (с ключом, чтобы не дублировалось)
+                selected = st.multiselect(
+                    "Выберите источники для графика",
+                    options=all_sources,
+                    default=default_selection,
+                    key="sel_sources",
+                )
+
+                filtered = chart_df[chart_df["traffic_source"].isin(selected)].copy()
+
+                if not filtered.empty:
+                    # 4) Построение графика с range slider по оси X
+                    fig = px.line(
+                        filtered,
+                        x="event_time",
+                        y="cost_rub",
+                        color="traffic_source",
+                        labels={
+                            "event_time": "Дата",
+                            "cost_rub": "Затраты (₽)",
+                            "traffic_source": "Источник",
+                        },
+                    )
+                    # Добавляем pastel-цвета
+                    fig.update_layout(colorway=px.colors.qualitative.Pastel)
+
+                    # Включаем встроенный range slider и кнопки селектора диапазона (Plotly)
+                    fig.update_layout(
+                        xaxis=dict(
+                            rangeselector=dict(
+                                buttons=list([
+                                    dict(count=7, label="Неделя", step="day", stepmode="backward"),
+                                    dict(count=1, label="Месяц", step="month", stepmode="backward"),
+                                    dict(step="all", label="Всё")
+                                ])
+                            ),
+                            rangeslider=dict(visible=True),
+                            type="date"
+                        )
+                    )
+
+                    # Настраиваем маркеры и толщину линий
+                    fig.update_traces(marker=dict(size=4), line=dict(width=2))
+
+                    # Форматируем ось Y с разделителем тысяч
+                    fig.update_yaxes(tickformat=",.0f")
+
+                    st.plotly_chart(fig, use_container_width=True)
+                else:
+                    st.info("Выберите хотя бы один источник для отображения графика.")
 
 elif menu == "Диаграммы":
     st.header("Диаграммы")
