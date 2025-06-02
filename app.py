@@ -116,13 +116,13 @@ if st.session_state['last_update']:
 st.sidebar.caption('✅ Данные загружены' if st.session_state['loaded'] else '❌ Данные не загружены')
 
 # ----------------------------------------
-# Основная часть приложения
+# Main
 # ----------------------------------------
 if menu == 'Главная':
     st.title('Dashboard: Затраты рекламы')
     st.markdown('Добро пожаловать в дашборд управления затратами по рекламным кампаниям.')
     if not st.session_state['loaded']:
-        st.info('Нажмите «Обновить» в боковом меню, чтобы загрузить данные')
+        st.info('Нажмите «Обновить» в меню, чтобы загрузить данные')
     else:
         df_m = st.session_state['moloco'].copy()
         df_m['event_time'] = pd.to_datetime(df_m['event_time']).dt.date
@@ -131,76 +131,37 @@ if menu == 'Главная':
         st.markdown(f"**Дата:** {prev_day}")
 
         # Moloco KPI
-        vals = df_m[df_m['event_time'] == prev_day]['cost']
+        vals = df_m[df_m['event_time']==prev_day]['cost']
         curr = sum(clean_num(v) for v in vals)
-        prev_vals = df_m[df_m['event_time'] == prev_day - timedelta(days=1)]['cost']
+        prev_vals = df_m[df_m['event_time']==prev_day-timedelta(days=1)]['cost']
         prev_sum = sum(clean_num(v) for v in prev_vals)
-        delta = (curr - prev_sum) / prev_sum * 100 if prev_sum else 0
-
+        delta = (curr-prev_sum)/prev_sum*100 if prev_sum else 0
         col1, = st.columns([1])
         with col1:
             st.subheader('Moloco')
-            # Значок $ после цифр
-            st.metric('', f'{int(curr):,} $'.replace(',', ' '), delta=f'{delta:+.1f}%')
+            st.metric('', f'${int(curr):,}'.replace(',', ' '), delta=f'{delta:+.1f}%')
 
-        # Other sources KPI
         df_o = st.session_state['other'].copy()
-        df_o['event_time'] = pd.to_datetime(df_o.get('event_date', df_o.get('event_time'))).dt.date
-        items = []
-        for src, grp in df_o.groupby('traffic_source'):
-            current_vals = grp[grp['event_time'] == prev_day]['costs']
-            tot = sum(clean_num(v) for v in current_vals)
-            prev_vals_o = grp[grp['event_time'] == prev_day - timedelta(days=1)]['costs']
-            prev_sum_o = sum(clean_num(v) for v in prev_vals_o)
-            delta_src = (tot - prev_sum_o) / prev_sum_o * 100 if prev_sum_o else 0
-            items.append((src, tot, delta_src))
+        df_o['event_time'] = pd.to_datetime(df_o.get('event_date',df_o.get('event_time'))).dt.date
+        items=[]
+        for src,grp in df_o.groupby('traffic_source'):
+            cur = sum(clean_num(v) for v in grp[grp['event_time']==prev_day]['costs'])
+            prev = sum(clean_num(v) for v in grp[grp['event_time']==prev_day-timedelta(days=1)]['costs'])
+            dp = (cur-prev)/prev*100 if prev else 0
+            items.append((src,cur,dp))
+        cols = st.columns(len(items),gap='small')
+        for (src,total,d),col in zip(items,cols):
+            col.markdown(f"**{src}**")
+            col.metric('', f'{int(total):,}'.replace(',', ' '), delta=f'{d:+.1f}%')
 
-        half = (len(items) + 1) // 2
-        for row in [items[:half], items[half:]]:
-            cols = st.columns(len(row), gap='small')
-            for (src, total, d), col in zip(row, cols):
-                col.markdown(f"**{src}**")
-                # Значок рубля после цифр
-                col.metric('', f'{int(total):,} ₽'.replace(',', ' '), delta=f'{d:+.1f}%')
-
-        st.divider()
-        st.header('Тренд затрат Moloco')
-        df_chart = df_m.copy()
-        df_chart['cost_num'] = df_chart['cost'].apply(clean_num)
-        daily = df_chart.groupby('event_time')['cost_num'].sum().reset_index()
-        today = datetime.now(pytz.timezone('Europe/Moscow')).date()
-        daily = daily[daily['event_time'] < today]
-        end = daily['event_time'].max()
-        start = end.replace(day=1)
-        fig = px.line(
-            daily,
-            x='event_time',
-            y='cost_num',
-            labels={'event_time':'Дата', 'cost_num':'Затраты'},
-            markers=True
-        )
-        fig.update_traces(marker=dict(size=4), line=dict(width=2))
-        fig.update_layout(
-            xaxis=dict(rangeslider=dict(visible=True), range=[start, end], tickformat='%d %b'),
-            yaxis=dict(tickformat=',.0f'),
-            margin=dict(l=20, r=20, t=30, b=20)
-        )
-        st.plotly_chart(fig, use_container_width=True)
-
-elif menu == 'Диаграммы':
-    st.header('Диаграммы')
-    st.info('В разработке')
-
-elif menu == 'Сводные таблицы':
-    st.header('Сводные таблицы')
-    st.info('В разработке')
-
-elif menu == 'Сырые данные':
+elif menu=='Диаграммы':
+    st.header('Диаграммы'); st.info('В разработке')
+elif menu=='Сводные таблицы':
+    st.header('Сводные таблицы'); st.info('В разработке')
+else:
     st.title('Сырые данные из Google Sheets')
     if not st.session_state['loaded']:
-        st.info('Нажмите «Обновить» в боковом меню')
+        st.info('Нажмите «Обновить»')
     else:
-        st.subheader('Moloco Raw')
-        st.dataframe(st.session_state['moloco'])
-        st.subheader('Other Raw')
-        st.dataframe(st.session_state['other'])
+        st.subheader('Moloco Raw'); st.dataframe(st.session_state['moloco'])
+        st.subheader('Other Raw'); st.dataframe(st.session_state['other'])
