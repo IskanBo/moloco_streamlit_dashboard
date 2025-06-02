@@ -141,43 +141,46 @@ if menu == "Главная":
         prev_day = latest - timedelta(days=1)
         st.markdown(f"**Дата:** {prev_day}")
 
-        # Moloco KPI (вывод в рублях + мелким долларовый эквивалент)
+        # START: БЛОК “Moloco KPI”
+
+        # 1. Считаем суммы в долларах
         vals = df_m[df_m["event_time"] == prev_day]["cost"]
         curr_usd = sum(clean_num(v) for v in vals)
+
         prev_vals = df_m[df_m["event_time"] == prev_day - timedelta(days=1)]["cost"]
         prev_sum_usd = sum(clean_num(v) for v in prev_vals)
 
+        # 2. Конвертируем в рубли только если usd_rate НЕ None
         if usd_rate is not None:
             curr_rub = curr_usd * usd_rate
             prev_sum_rub = prev_sum_usd * usd_rate
-            delta_pct = (
-                (curr_rub - prev_sum_rub) / prev_sum_rub * 100
-                if prev_sum_rub
-                else 0
-            )
+            delta_pct = (curr_rub - prev_sum_rub) / prev_sum_rub * 100 if prev_sum_rub else 0
         else:
+            # если курс не получен, оставляем в None, и дельту считаем по USD
             curr_rub = None
             prev_sum_rub = None
             delta_pct = (curr_usd - prev_sum_usd) / prev_sum_usd * 100 if prev_sum_usd else 0
 
+        # 3. Выводим в колонке
         col1, = st.columns([1])
         with col1:
             st.subheader("Moloco")
             if curr_rub is not None:
-                # Основная сумма в рублях
+                # Основная карта: сумма в рублях
                 rub_str = f"{int(curr_rub):,}".replace(",", " ")
                 st.metric("", f"{rub_str} ₽", delta=f"{delta_pct:+.1f}%")
-                # Оригинальная сумма в долларах мелким и серым
+                # Рядом мелким шрифтом и серым — оригинал в USD
+                usd_str = f"{int(curr_usd):,}".replace(",", " ")
                 st.markdown(
-                    f"<span style='color:gray;font-size:12px'>${int(curr_usd):,}</span>".replace(
-                        ",", " "
-                    ),
-                    unsafe_allow_html=True,
+                    f"<span style='color:gray;font-size:12px'>${usd_str}</span>",
+                    unsafe_allow_html=True
                 )
             else:
-                # Если курс не доступен, показываем только доллары
+                # Если курс не доступен — показываем только доллары
                 usd_str = f"{int(curr_usd):,}".replace(",", " ")
                 st.metric("", f"{usd_str} $", delta=f"{delta_pct:+.1f}%")
+
+        # END: БЛОК “Moloco KPI”
 
         # Other sources KPI (никаких изменений)
         df_o = st.session_state["other"].copy()
