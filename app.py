@@ -136,13 +136,21 @@ if menu == "Главная":
         prev_day = latest - timedelta(days=1)
         st.markdown(f"**Дата:** {prev_day}")
 
-        # Moloco KPI (конвертация USD → RUB + мелкий USD)
+        # Moloco KPI
+        # Приводим курс к float, чтобы избежать TypeError (Decimal * float = TypeError)
+        if usd_rate is not None:
+            usd_rate = float(usd_rate)
+        else:
+            usd_rate = None
+
+        # Считаем суммы в долларах (строки → float) — фильтруем NaN, приводим к str:
         vals = (
             df_m[df_m["event_time"] == prev_day]["cost"]
             .dropna()
             .astype(str)
         )
         curr_usd = sum(clean_num(v) for v in vals)
+
         prev_vals = (
             df_m[df_m["event_time"] == prev_day - timedelta(days=1)]["cost"]
             .dropna()
@@ -150,6 +158,7 @@ if menu == "Главная":
         )
         prev_sum_usd = sum(clean_num(v) for v in prev_vals)
 
+        # Конвертируем в рубли только если usd_rate не None
         if usd_rate is not None:
             curr_rub = curr_usd * usd_rate
             prev_sum_rub = prev_sum_usd * usd_rate
@@ -171,14 +180,17 @@ if menu == "Главная":
         with col1:
             st.subheader("Moloco")
             if curr_rub is not None:
+                # Основная сумма в рублях
                 rub_str = f"{int(curr_rub):,}".replace(",", " ")
                 st.metric("", f"{rub_str} ₽", delta=f"{delta_pct:+.1f}%")
+                # Оригинальная сумма в долларах мелким и серым
                 usd_str = f"{int(curr_usd):,}".replace(",", " ")
                 st.markdown(
                     f"<span style='color:gray;font-size:12px'>${usd_str}</span>",
                     unsafe_allow_html=True,
                 )
             else:
+                # Если курс не получен — показываем только USD
                 usd_str = f"{int(curr_usd):,}".replace(",", " ")
                 st.metric("", f"{usd_str} $", delta=f"{delta_pct:+.1f}%")
 
