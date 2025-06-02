@@ -179,22 +179,76 @@ if menu == "Главная":
         col1, = st.columns([1])
         with col1:
             st.subheader("Moloco")
-            if curr_rub is not None:
-                # Основная сумма в рублях
-                rub_str = f"{int(curr_rub):,}".replace(",", " ")
-                st.metric("", f"{rub_str} ₽", delta=f"{delta_pct:+.1f}%")
-                # Оригинальная сумма в долларах мелким и серым
-                usd_str = f"{int(curr_usd):,}".replace(",", " ")
-                st.markdown(
-                    f"<span style='color:gray;font-size:12px'>${usd_str}</span>",
-                    unsafe_allow_html=True,
+
+            # 1) Считаем суммы в долларах и фильтруем NaN/приводим к str
+            vals = (
+                df_m[df_m["event_time"] == prev_day]["cost"]
+                .dropna()
+                .astype(str)
+            )
+            curr_usd = sum(clean_num(v) for v in vals)
+
+            prev_vals = (
+                df_m[df_m["event_time"] == prev_day - timedelta(days=1)]["cost"]
+                .dropna()
+                .astype(str)
+            )
+            prev_sum_usd = sum(clean_num(v) for v in prev_vals)
+
+            # 2) Приводим курс к float (если есть) и считаем RUB/дельту
+            if usd_rate is not None:
+                usd_rate = float(usd_rate)  # конвертируем Decimal → float
+                curr_rub = curr_usd * usd_rate
+                prev_sum_rub = prev_sum_usd * usd_rate
+                delta_pct = (
+                    (curr_rub - prev_sum_rub) / prev_sum_rub * 100
+                    if prev_sum_rub
+                    else 0
                 )
             else:
-                # Если курс не получен — показываем только USD
-                usd_str = f"{int(curr_usd):,}".replace(",", " ")
-                st.metric("", f"{usd_str} $", delta=f"{delta_pct:+.1f}%")
+                curr_rub = None
+                prev_sum_rub = None
+                delta_pct = (
+                    (curr_usd - prev_sum_usd) / prev_sum_usd * 100
+                    if prev_sum_usd
+                    else 0
+                )
 
-        # Other sources KPI (без изменений)
+            # 3) Выводим: слева — рубли крупным, справа — доллары средним шрифтом
+            col1, col2 = st.columns([3, 1])
+            with col1:
+                if curr_rub is not None:
+                    # Основной вывод в рублях
+                    rub_str = f"{int(curr_rub):,}".replace(",", " ")
+                    st.markdown(
+                        f"<span style='font-size:32px;font-weight:bold'>{rub_str} ₽</span>",
+                        unsafe_allow_html=True,
+                    )
+                else:
+                    # Если курс не получен — выводим USD
+                    usd_only = f"{int(curr_usd):,}".replace(",", " ")
+                    st.markdown(
+                        f"<span style='font-size:32px;font-weight:bold'>{usd_only} $</span>",
+                        unsafe_allow_html=True,
+                    )
+            with col2:
+                if curr_rub is not None:
+                    usd_str = f"{int(curr_usd):,}".replace(",", " ")
+                    st.markdown(
+                        f"<span style='color:gray;font-size:18px'>${usd_str}</span>",
+                        unsafe_allow_html=True,
+                    )
+                else:
+                    st.write("")  # ничего не выводить
+
+            # 4) Дельта под значением Rub
+            color = "green" if delta_pct >= 0 else "red"
+            st.markdown(
+                f"<div style='color:{color};font-size:20px'>{delta_pct:+.1f}%</div>",
+                unsafe_allow_html=True,
+            )
+
+        # Other sources
         df_o = st.session_state["other"].copy()
         df_o["event_time"] = pd.to_datetime(
             df_o.get("event_date", df_o.get("event_time"))
