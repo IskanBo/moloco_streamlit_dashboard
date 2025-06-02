@@ -201,7 +201,7 @@ if menu == "Главная":
             unsafe_allow_html=True,
         )
 
-        # Other sources
+        # Other sources KPI
         df_o = st.session_state["other"].copy()
         df_o["event_time"] = pd.to_datetime(
             df_o.get("event_date", df_o.get("event_time"))
@@ -227,8 +227,16 @@ if menu == "Главная":
         for row in [items[:half], items[half:]]:
             cols = st.columns(len(row), gap="small")
             for (src, total, d), col in zip(row, cols):
-                col.markdown(f"**{src}**")
-                col.metric("", f"{int(total):,} ₽".replace(",", " "), delta=f"{d:+.1f}%")
+                # Выводим источник и сумму в одной строке без пробела
+                rub_str = f"{int(total):,}".replace(",", " ")
+                col.markdown(f"**{src}{rub_str}₽**", unsafe_allow_html=True)
+
+                # Процент в мелком шрифте (цвет зависит от знака)
+                color = "green" if d >= 0 else "red"
+                col.markdown(
+                    f"<span style='color:{color}; font-size:14px'>{d:+.1f}%</span>",
+                    unsafe_allow_html=True,
+                )
 
         # Trend chart
         st.divider()
