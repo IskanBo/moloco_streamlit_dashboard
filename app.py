@@ -137,13 +137,13 @@ if menu == "Главная":
         st.markdown(f"**Дата:** {prev_day}")
 
         # Moloco KPI
-        # Приводим курс к float, чтобы избежать TypeError (Decimal * float = TypeError)
+        # Приводим курс к float, чтобы избежать TypeError (Decimal * float)
         if usd_rate is not None:
             usd_rate = float(usd_rate)
         else:
             usd_rate = None
 
-        # Считаем суммы в долларах (стерозы → float), фильтруем NaN и приводим к str:
+        # Считаем суммы в долларах (фильтруем NaN, приводим к str)
         vals = (
             df_m[df_m["event_time"] == prev_day]["cost"]
             .dropna()
@@ -158,7 +158,7 @@ if menu == "Главная":
         )
         prev_sum_usd = sum(clean_num(v) for v in prev_vals)
 
-        # Конвертируем в рубли, если курс доступен
+        # Конвертируем в рубли, если курс есть
         if usd_rate is not None:
             curr_rub = curr_usd * usd_rate
             prev_sum_rub = prev_sum_usd * usd_rate
@@ -176,21 +176,22 @@ if menu == "Главная":
                 else 0
             )
 
-        # Выводим Moloco: рубли крупным, а справа малым шрифтом долларовый эквивалент
+        # Заголовок Moloco и сумма сразу под ним (без лишнего пробела)
         st.subheader("Moloco")
         if curr_rub is not None:
             rub_str = f"{int(curr_rub):,}".replace(",", " ")
             usd_str = f"{int(curr_usd):,}".replace(",", " ")
+            # ₽ крупным, долларовый эквивалент в виде "sup" справа
             st.markdown(
-                f"<span style='font-size:32px; font-weight:bold'>{rub_str} ₽"
-                f"<sup style='font-size:16px; color:gray'>${usd_str}</sup>"
+                f"<span style='font-size:32px; font-weight:bold'>"
+                f"{rub_str}₽<sup style='font-size:16px; color:gray'>${usd_str}</sup>"
                 f"</span>",
                 unsafe_allow_html=True,
             )
         else:
             usd_only = f"{int(curr_usd):,}".replace(",", " ")
             st.markdown(
-                f"<span style='font-size:32px; font-weight:bold'>{usd_only} $</span>",
+                f"<span style='font-size:32px; font-weight:bold'>{usd_only}$</span>",
                 unsafe_allow_html=True,
             )
 
@@ -201,7 +202,9 @@ if menu == "Главная":
             unsafe_allow_html=True,
         )
 
+        # ----------------------------------------
         # Other sources KPI
+        # ----------------------------------------
         df_o = st.session_state["other"].copy()
         df_o["event_time"] = pd.to_datetime(
             df_o.get("event_date", df_o.get("event_time"))
@@ -214,6 +217,7 @@ if menu == "Главная":
                 .astype(str)
             )
             tot = sum(clean_num(v) for v in current_vals)
+
             prev_vals_o = (
                 grp[grp["event_time"] == prev_day - timedelta(days=1)]["costs"]
                 .dropna()
@@ -224,17 +228,21 @@ if menu == "Главная":
             items.append((src, tot, delta_src))
 
         half = (len(items) + 1) // 2
+        # Разбиваем на две строки (как было) — первая половина и вторая половина
         for row in [items[:half], items[half:]]:
             cols = st.columns(len(row), gap="small")
             for (src, total, d), col in zip(row, cols):
-                # Выводим источник и сумму в одной строке без пробела
+                # 1) Название источника и сумма без пробела (сразу под названием)
                 rub_str = f"{int(total):,}".replace(",", " ")
-                col.markdown(f"**{src}{rub_str}₽**", unsafe_allow_html=True)
-
-                # Процент в мелком шрифте (цвет зависит от знака)
-                color = "green" if d >= 0 else "red"
+                col.markdown(f"**{src}**", unsafe_allow_html=True)
                 col.markdown(
-                    f"<span style='color:{color}; font-size:14px'>{d:+.1f}%</span>",
+                    f"<span style='font-size:24px; font-weight:bold'>{rub_str}₽</span>",
+                    unsafe_allow_html=True,
+                )
+                # 2) Процент под суммой — мелким шрифтом
+                color_src = "green" if d >= 0 else "red"
+                col.markdown(
+                    f"<span style='color:{color_src}; font-size:14px'>{d:+.1f}%</span>",
                     unsafe_allow_html=True,
                 )
 
