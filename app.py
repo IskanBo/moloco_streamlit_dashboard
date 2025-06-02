@@ -246,49 +246,77 @@ if menu == "Главная":
                     unsafe_allow_html=True,
                 )
 
-        # Trend chart
-        st.divider()
-        st.header("Тренд затрат Moloco")
-        df_chart = df_m.copy()
-        df_chart["cost_num"] = df_chart["cost"].apply(clean_num)
-        daily = df_chart.groupby("event_time")["cost_num"].sum().reset_index()
-        today = datetime.now(pytz.timezone("Europe/Moscow")).date()
-        daily = daily[daily["event_time"] < today]
-        end = daily["event_time"].max()
-        start = end.replace(day=1)
-        fig = px.line(
-            daily,
-            x="event_time",
-            y="cost_num",
-            labels={"event_time": "Дата", "cost_num": "Затраты"},
-            markers=True,
-        )
-        fig.update_traces(marker=dict(size=4), line=dict(width=2))
-        fig.update_layout(
-            xaxis=dict(
-                rangeslider=dict(visible=True),
-                range=[start, end],
-                tickformat="%d %b",
-            ),
-            yaxis=dict(tickformat=",.0f"),
-            margin=dict(l=20, r=20, t=30, b=20),
-        )
-        st.plotly_chart(fig, use_container_width=True)
+                # ----------------------------------------
+                # Тренд затрат Moloco и других источников
+                # ----------------------------------------
+                st.divider()
+                st.header("Тренд затрат по источникам (в ₽)")
 
-elif menu == "Диаграммы":
-    st.header("Диаграммы")
-    st.info("В разработке")
+                # 1) Подготовка данных Moloco (переводим USD → RUB)
+                moloco_df = df_m.copy()
+                moloco_df["cost_num_usd"] = moloco_df["cost"].apply(clean_num)
+                if usd_rate is not None:
+                    usd_rate = float(usd_rate)
+                    moloco_df["cost_rub"] = moloco_df["cost_num_usd"] * usd_rate
+                else:
+                    # Если курс не доступен, все значения делаем NaN, чтобы не попадали на график
+                    moloco_df["cost_rub"] = float("nan")
 
-elif menu == "Сводные таблицы":
-    st.header("Сводные таблицы")
-    st.info("В разработке")
+                # Группируем по дате в Moloco
+                moloco_daily = (
+                    moloco_df.groupby("event_time")["cost_rub"]
+                    .sum()
+                    .reset_index()
+                    .assign(traffic_source="Moloco")
+                )
 
-elif menu == "Сырые данные":
-    st.title("Сырые данные из Google Sheets")
-    if not st.session_state["loaded"]:
-        st.info("Нажмите «Обновить» в боковом меню")
-    else:
-        st.subheader("Moloco Raw")
-        st.dataframe(st.session_state["moloco"])
-        st.subheader("Other Raw")
-        st.dataframe(st.session_state["other"])
+                # 2) Подготовка данных Other источников (costs уже в рублях)
+                other_df = st.session_state["other"].copy()
+                other_df["event_time"] = pd.to_datetime(
+                    other_df.get("event_date", other_df.get("event_time"))
+                ).dt.date
+                other_df["cost_num"] = other_df["costs"].apply(clean_num)
+
+                other_daily = (
+                    other_df.groupby(["event_time", "traffic_source"])["cost_num"]
+                    .sum()
+                    .reset_index()
+                    .rename(columns={"cost_num": "cost_rub"})
+                )
+
+                # 3) Объединяем Moloco и Other
+                chart_df = pd.concat([moloco_daily, other_daily], ignore_index=True)
+
+                # 4) Фильтр: пользователь выбирает, какие источники показывать
+                all_sources = chart_df["traffic_source"].unique().tolist()
+                selected = st.multiselect(
+                    "Выберите источники для графика",
+                    options=all_sources,
+                    default=all_sources,
+                    key="sel_sources",
+                )
+
+                filtered = chart_df[chart_df["traffic_source"].isin(selected)].copy()
+
+                # 5) Строим линию с пастельными цветами и легендой
+                if not filtered.empty:
+                    fig = px.line(
+                        filtered,
+                        x="event_time",
+                        y="cost_rub",
+                        color="traffic_source",
+                        labels={
+                            "event_time": "Дата",
+                            "cost_rub": "Затраты (₽)",
+                            "traffic_source": "Источник",
+                        },
+                    )
+                    # Пастельные цвета
+                    fig.update_layout(colorway=px.colors.qualitative.Pastel)
+                    # Толщина и маркеры
+                    fig.update_traces(marker=dict(size=4), line=dict(width=2))
+                    # Формат оси Y: тысячный разделитель
+                    fig.update_yaxes(tickformat=",.0f")
+                    st.plotly_chart(fig, use_container_width=True)
+                else:
+                    st.info("Выберите хотя бы один источник для отображения графика.")
