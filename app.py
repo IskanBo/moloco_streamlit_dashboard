@@ -24,6 +24,7 @@ DASHBOARD_PASSWORD     = st.secrets["DASHBOARD_PASSWORD"]
 # ----------------------------------------
 if "authenticated" not in st.session_state:
     st.session_state.authenticated = False
+
 if not st.session_state.authenticated:
     pwd = st.sidebar.text_input("Пароль", type="password", key="login_input")
     if pwd:
@@ -42,7 +43,7 @@ else:
 # ----------------------------------------
 def clean_num(s: str) -> float:
     """
-    Убирает пробелы и конвертирует строку с запятой в float
+    Убирает пробельные символы и конвертирует строку с запятой в float
     """
     t = re.sub(r"\s+", "", s)
     return float(t.replace(",", "."))
@@ -97,9 +98,7 @@ if "last_update" not in st.session_state:
 # Боковое меню и курсы валют
 # ----------------------------------------
 st.sidebar.title("Навигация")
-menu = st.sidebar.radio(
-    "", ["Главная", "Диаграммы", "Сводные таблицы", "Сырые данные"]
-)
+menu = st.sidebar.radio("", ["Главная", "Диаграммы", "Сводные таблицы", "Сырые данные"])
 st.sidebar.markdown("---")
 
 usd_rate, eur_rate = get_rates()
@@ -111,9 +110,7 @@ if st.sidebar.button("Обновить"):
     st.session_state["moloco"] = fetch_moloco_raw()
     st.session_state["other"] = fetch_other_raw()
     st.session_state["loaded"] = True
-    st.session_state["last_update"] = datetime.now(
-        pytz.timezone("Europe/Moscow")
-    )
+    st.session_state["last_update"] = datetime.now(pytz.timezone("Europe/Moscow"))
 
 if st.session_state["last_update"]:
     st.sidebar.caption(
@@ -128,9 +125,7 @@ st.sidebar.caption(
 # ----------------------------------------
 if menu == "Главная":
     st.title("Dashboard: Затраты рекламы")
-    st.markdown(
-        "Добро пожаловать в дашборд управления затратами по рекламным кампаниям."
-    )
+    st.markdown("Добро пожаловать в дашборд управления затратами по рекламным кампаниям.")
     if not st.session_state["loaded"]:
         st.info("Нажмите «Обновить» в боковом меню, чтобы загрузить данные")
     else:
@@ -141,16 +136,20 @@ if menu == "Главная":
         prev_day = latest - timedelta(days=1)
         st.markdown(f"**Дата:** {prev_day}")
 
-        # START: БЛОК “Moloco KPI”
+        # Moloco KPI (конвертация USD → RUB + мелкий USD)
+        vals = (
+            df_m[df_m["event_time"] == prev_day]["cost"]
+            .dropna()
+            .astype(str)
+        )
+        curr_usd = sum(clean_num(v) for v in vals)
+        prev_vals = (
+            df_m[df_m["event_time"] == prev_day - timedelta(days=1)]["cost"]
+            .dropna()
+            .astype(str)
+        )
+        prev_sum_usd = sum(clean_num(v) for v in prev_vals)
 
-        # 1. Считаем суммы в долларах, отфильтровав NaN и приведя всё к str
-        vals_series = df_m[df_m["event_time"] == prev_day]["cost"].dropna().astype(str)
-        curr_usd = sum(clean_num(v) for v in vals_series)
-
-        prev_series = df_m[df_m["event_time"] == prev_day - timedelta(days=1)]["cost"].dropna().astype(str)
-        prev_sum_usd = sum(clean_num(v) for v in prev_series)
-
-        # 2. Конвертируем в рубли, если курс доступен
         if usd_rate is not None:
             curr_rub = curr_usd * usd_rate
             prev_sum_rub = prev_sum_usd * usd_rate
@@ -168,7 +167,6 @@ if menu == "Главная":
                 else 0
             )
 
-        # 3. Выводим в колонке
         col1, = st.columns([1])
         with col1:
             st.subheader("Moloco")
@@ -178,26 +176,30 @@ if menu == "Главная":
                 usd_str = f"{int(curr_usd):,}".replace(",", " ")
                 st.markdown(
                     f"<span style='color:gray;font-size:12px'>${usd_str}</span>",
-                    unsafe_allow_html=True
+                    unsafe_allow_html=True,
                 )
             else:
                 usd_str = f"{int(curr_usd):,}".replace(",", " ")
                 st.metric("", f"{usd_str} $", delta=f"{delta_pct:+.1f}%")
 
-        # END: БЛОК “Moloco KPI”
-
-        # Other sources KPI (никаких изменений)
+        # Other sources KPI (без изменений)
         df_o = st.session_state["other"].copy()
         df_o["event_time"] = pd.to_datetime(
             df_o.get("event_date", df_o.get("event_time"))
         ).dt.date
         items = []
         for src, grp in df_o.groupby("traffic_source"):
-            current_vals = grp[grp["event_time"] == prev_day]["costs"]
+            current_vals = (
+                grp[grp["event_time"] == prev_day]["costs"]
+                .dropna()
+                .astype(str)
+            )
             tot = sum(clean_num(v) for v in current_vals)
-            prev_vals_o = grp[
-                grp["event_time"] == prev_day - timedelta(days=1)
-            ]["costs"]
+            prev_vals_o = (
+                grp[grp["event_time"] == prev_day - timedelta(days=1)]["costs"]
+                .dropna()
+                .astype(str)
+            )
             prev_sum_o = sum(clean_num(v) for v in prev_vals_o)
             delta_src = (tot - prev_sum_o) / prev_sum_o * 100 if prev_sum_o else 0
             items.append((src, tot, delta_src))
