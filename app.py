@@ -320,3 +320,21 @@ if menu == "Главная":
                     st.plotly_chart(fig, use_container_width=True)
                 else:
                     st.info("Выберите хотя бы один источник для отображения графика.")
+
+elif menu == "Диаграммы":
+    st.header("Диаграммы")
+    st.info("В разработке")
+
+elif menu == "Сводные таблицы":
+    st.header("Сводные таблицы")
+    st.info("В разработке")
+
+elif menu == "Сырые данные":
+    st.title("Сырые данные из Google Sheets")
+    if not st.session_state["loaded"]:
+        st.info("Нажмите «Обновить» в боковом меню")
+    else:
+        st.subheader("Moloco Raw")
+        st.dataframe(st.session_state["moloco"])
+        st.subheader("Other Raw")
+        st.dataframe(st.session_state["other"])
