@@ -20,11 +20,8 @@ OTHER_SOURCES_SHEET_ID = st.secrets["OTHER_SOURCES_SHEET_ID"]
 DASHBOARD_PASSWORD     = st.secrets["DASHBOARD_PASSWORD"]
 
 # ----------------------------------------
-# Авторизация через query-параметр и session_state
+# Авторизация через session_state
 # ----------------------------------------
-params = st.query_params
-if params.get("auth", ["0"])[0] == "1":
-    st.session_state.authenticated = True
 if "authenticated" not in st.session_state:
     st.session_state.authenticated = False
 if not st.session_state.authenticated:
@@ -32,7 +29,6 @@ if not st.session_state.authenticated:
     if pwd:
         if pwd == DASHBOARD_PASSWORD:
             st.session_state.authenticated = True
-            st.query_params = {"auth": ["1"]}
         else:
             st.sidebar.error("Неверный пароль")
             st.stop()
