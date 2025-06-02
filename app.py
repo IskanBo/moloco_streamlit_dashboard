@@ -136,14 +136,16 @@ if menu == "Главная":
         prev_day = latest - timedelta(days=1)
         st.markdown(f"**Дата:** {prev_day}")
 
+        # ----------------------------------------
         # Moloco KPI
-        # Приводим курс к float, чтобы избежать TypeError (Decimal * float)
+        # ----------------------------------------
+        # Приводим курс к float (Decimal → float)
         if usd_rate is not None:
             usd_rate = float(usd_rate)
         else:
             usd_rate = None
 
-        # Считаем суммы в долларах (фильтруем NaN, приводим к str)
+        # Считаем суммы в долларах для Moloco (фильтруем NaN, приводим к str)
         vals = (
             df_m[df_m["event_time"] == prev_day]["cost"]
             .dropna()
@@ -158,7 +160,7 @@ if menu == "Главная":
         )
         prev_sum_usd = sum(clean_num(v) for v in prev_vals)
 
-        # Конвертируем в рубли, если курс есть
+        # Конвертируем Moloco в рубли, если курс доступен
         if usd_rate is not None:
             curr_rub = curr_usd * usd_rate
             prev_sum_rub = prev_sum_usd * usd_rate
@@ -176,12 +178,11 @@ if menu == "Главная":
                 else 0
             )
 
-        # Заголовок Moloco и сумма сразу под ним (без лишнего пробела)
+        # Заголовок Moloco и сразу сумма (без пустой строки)
         st.subheader("Moloco")
         if curr_rub is not None:
             rub_str = f"{int(curr_rub):,}".replace(",", " ")
             usd_str = f"{int(curr_usd):,}".replace(",", " ")
-            # ₽ крупным, долларовый эквивалент в виде "sup" справа
             st.markdown(
                 f"<span style='font-size:32px; font-weight:bold'>"
                 f"{rub_str}₽<sup style='font-size:16px; color:gray'>${usd_str}</sup>"
@@ -195,7 +196,7 @@ if menu == "Главная":
                 unsafe_allow_html=True,
             )
 
-        # Дельта под стоимостью Moloco
+        # Дельта под Moloco
         color = "green" if delta_pct >= 0 else "red"
         st.markdown(
             f"<div style='color:{color}; font-size:20px'>{delta_pct:+.1f}%</div>",
@@ -228,98 +229,87 @@ if menu == "Главная":
             items.append((src, tot, delta_src))
 
         half = (len(items) + 1) // 2
-        # Разбиваем на две строки (как было) — первая половина и вторая половина
         for row in [items[:half], items[half:]]:
             cols = st.columns(len(row), gap="small")
             for (src, total, d), col in zip(row, cols):
-                # 1) Название источника и сумма без пробела (сразу под названием)
+                # Сначала название, без пробела перед суммой
                 rub_str = f"{int(total):,}".replace(",", " ")
                 col.markdown(f"**{src}**", unsafe_allow_html=True)
                 col.markdown(
                     f"<span style='font-size:24px; font-weight:bold'>{rub_str}₽</span>",
                     unsafe_allow_html=True,
                 )
-                # 2) Процент под суммой — мелким шрифтом
                 color_src = "green" if d >= 0 else "red"
                 col.markdown(
                     f"<span style='color:{color_src}; font-size:14px'>{d:+.1f}%</span>",
                     unsafe_allow_html=True,
                 )
 
-                # ----------------------------------------
-                # Тренд затрат Moloco и других источников
-                # ----------------------------------------
-                st.divider()
-                st.header("Тренд затрат по источникам (в ₽)")
+        # ----------------------------------------
+        # Тренд затрат по источникам (в ₽)
+        # ----------------------------------------
+        st.divider()
+        st.header("Тренд затрат по источникам (в ₽)")
 
-                # 1) Подготовка данных Moloco (переводим USD → RUB)
-                moloco_df = df_m.copy()
-                moloco_df["cost_num_usd"] = moloco_df["cost"].apply(clean_num)
-                if usd_rate is not None:
-                    usd_rate = float(usd_rate)
-                    moloco_df["cost_rub"] = moloco_df["cost_num_usd"] * usd_rate
-                else:
-                    # Если курс не доступен, все значения делаем NaN, чтобы не попадали на график
-                    moloco_df["cost_rub"] = float("nan")
+        # Подготовка Moloco (USD→RUB)
+        moloco_df = df_m.copy()
+        moloco_df["cost_num_usd"] = moloco_df["cost"].apply(clean_num)
+        if usd_rate is not None:
+            moloco_df["cost_rub"] = moloco_df["cost_num_usd"] * usd_rate
+        else:
+            moloco_df["cost_rub"] = float("nan")
+        moloco_daily = (
+            moloco_df.groupby("event_time")["cost_rub"]
+            .sum()
+            .reset_index()
+            .assign(traffic_source="Moloco")
+        )
 
-                # Группируем по дате в Moloco
-                moloco_daily = (
-                    moloco_df.groupby("event_time")["cost_rub"]
-                    .sum()
-                    .reset_index()
-                    .assign(traffic_source="Moloco")
-                )
+        # Подготовка Other (в рублях уже)
+        other_df = st.session_state["other"].copy()
+        other_df["event_time"] = pd.to_datetime(
+            other_df.get("event_date", other_df.get("event_time"))
+        ).dt.date
+        other_df["cost_num"] = other_df["costs"].apply(clean_num)
+        other_daily = (
+            other_df.groupby(["event_time", "traffic_source"])["cost_num"]
+            .sum()
+            .reset_index()
+            .rename(columns={"cost_num": "cost_rub"})
+        )
 
-                # 2) Подготовка данных Other источников (costs уже в рублях)
-                other_df = st.session_state["other"].copy()
-                other_df["event_time"] = pd.to_datetime(
-                    other_df.get("event_date", other_df.get("event_time"))
-                ).dt.date
-                other_df["cost_num"] = other_df["costs"].apply(clean_num)
+        # Объединяем Moloco и Other
+        chart_df = pd.concat([moloco_daily, other_daily], ignore_index=True)
 
-                other_daily = (
-                    other_df.groupby(["event_time", "traffic_source"])["cost_num"]
-                    .sum()
-                    .reset_index()
-                    .rename(columns={"cost_num": "cost_rub"})
-                )
+        # Пользователь выбирает, какие источники отображать
+        all_sources = chart_df["traffic_source"].unique().tolist()
+        selected = st.multiselect(
+            "Выберите источники для графика",
+            options=all_sources,
+            default=all_sources,
+            key="sel_sources",
+        )
 
-                # 3) Объединяем Moloco и Other
-                chart_df = pd.concat([moloco_daily, other_daily], ignore_index=True)
+        filtered = chart_df[chart_df["traffic_source"].isin(selected)].copy()
 
-                # 4) Фильтр: пользователь выбирает, какие источники показывать
-                all_sources = chart_df["traffic_source"].unique().tolist()
-                selected = st.multiselect(
-                    "Выберите источники для графика",
-                    options=all_sources,
-                    default=all_sources,
-                    key="sel_sources",
-                )
-
-                filtered = chart_df[chart_df["traffic_source"].isin(selected)].copy()
-
-                # 5) Строим линию с пастельными цветами и легендой
-                if not filtered.empty:
-                    fig = px.line(
-                        filtered,
-                        x="event_time",
-                        y="cost_rub",
-                        color="traffic_source",
-                        labels={
-                            "event_time": "Дата",
-                            "cost_rub": "Затраты (₽)",
-                            "traffic_source": "Источник",
-                        },
-                    )
-                    # Пастельные цвета
-                    fig.update_layout(colorway=px.colors.qualitative.Pastel)
-                    # Толщина и маркеры
-                    fig.update_traces(marker=dict(size=4), line=dict(width=2))
-                    # Формат оси Y: тысячный разделитель
-                    fig.update_yaxes(tickformat=",.0f")
-                    st.plotly_chart(fig, use_container_width=True)
-                else:
-                    st.info("Выберите хотя бы один источник для отображения графика.")
+        if not filtered.empty:
+            fig = px.line(
+                filtered,
+                x="event_time",
+                y="cost_rub",
+                color="traffic_source",
+                labels={
+                    "event_time": "Дата",
+                    "cost_rub": "Затраты (₽)",
+                    "traffic_source": "Источник",
+                },
+            )
+            fig.update_layout(colorway=px.colors.qualitative.Pastel)
+            fig.update_traces(marker=dict(size=4), line=dict(width=2))
+            fig.update_yaxes(tickformat=",.0f")
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("Выберите хотя бы один источник для отображения графика.")
 
 elif menu == "Диаграммы":
     st.header("Диаграммы")
