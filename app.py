@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 import gspread
 import json
-import hashlib
 from datetime import datetime, timedelta, date
 import pytz
 from pycbrf.toolbox import ExchangeRates
@@ -18,50 +17,26 @@ client = gspread.service_account_from_dict(creds)
 # Остальные переменные из секрета
 MOLOCO_SHEET_ID        = st.secrets["MOLOCO_SHEET_ID"]
 OTHER_SOURCES_SHEET_ID = st.secrets["OTHER_SOURCES_SHEET_ID"]
-# SHA256-хэш пароля хранится в секрете
-# Переменная называется так же, как и в исходной версии, чтобы
-# соответствовать названию в `st.secrets`.
-DASHBOARD_PASSWORD = st.secrets["DASHBOARD_PASSWORD"]
+DASHBOARD_PASSWORD     = st.secrets["DASHBOARD_PASSWORD"]
 
-AUTH_TIMEOUT_MIN = 60  # продолжительность сессии в минутах
+# ----------------------------------------
+# Авторизация через session_state
+# ----------------------------------------
+if "authenticated" not in st.session_state:
+    st.session_state.authenticated = False
 
-def _hash_pwd(pwd: str) -> str:
-    return hashlib.sha256(pwd.encode()).hexdigest()
-
-def require_auth():
-    if "authenticated" not in st.session_state:
-        st.session_state.authenticated = False
-        st.session_state.login_time = None
-
-    if (
-        st.session_state.authenticated
-        and st.session_state.login_time
-        and datetime.now() - st.session_state.login_time > timedelta(minutes=AUTH_TIMEOUT_MIN)
-    ):
-        st.session_state.authenticated = False
-        st.session_state.login_time = None
-
-    if not st.session_state.authenticated:
-        pwd = st.sidebar.text_input("Пароль", type="password", key="login_input")
-        if pwd:
-            if _hash_pwd(pwd) == DASHBOARD_PASSWORD:
-                st.session_state.authenticated = True
-                st.session_state.login_time = datetime.now()
-            else:
-                st.sidebar.error("Неверный пароль")
-                st.stop()
+if not st.session_state.authenticated:
+    pwd = st.sidebar.text_input("Пароль", type="password", key="login_input")
+    if pwd:
+        if pwd == DASHBOARD_PASSWORD:
+            st.session_state.authenticated = True
         else:
+            st.sidebar.error("Неверный пароль")
             st.stop()
     else:
-        st.sidebar.success("Вы авторизованы")
-        if st.sidebar.button("Выйти"):
-            st.session_state.authenticated = False
-            st.session_state.login_time = None
-            st.experimental_rerun()
-
-require_auth()
-
-
+        st.stop()
+else:
+    st.sidebar.success("Вы авторизованы")
 
 # ----------------------------------------
 # Утилиты для предобработки строки
