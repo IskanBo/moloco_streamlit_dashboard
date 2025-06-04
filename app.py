@@ -19,7 +19,9 @@ client = gspread.service_account_from_dict(creds)
 MOLOCO_SHEET_ID        = st.secrets["MOLOCO_SHEET_ID"]
 OTHER_SOURCES_SHEET_ID = st.secrets["OTHER_SOURCES_SHEET_ID"]
 # SHA256-хэш пароля хранится в секрете
-DASHBOARD_PASSWORD_HASH = st.secrets["DASHBOARD_PASSWORD_HASH"]
+# Переменная называется так же, как и в исходной версии, чтобы
+# соответствовать названию в `st.secrets`.
+DASHBOARD_PASSWORD = st.secrets["DASHBOARD_PASSWORD"]
 
 AUTH_TIMEOUT_MIN = 60  # продолжительность сессии в минутах
 
@@ -42,7 +44,7 @@ def require_auth():
     if not st.session_state.authenticated:
         pwd = st.sidebar.text_input("Пароль", type="password", key="login_input")
         if pwd:
-            if _hash_pwd(pwd) == DASHBOARD_PASSWORD_HASH:
+            if _hash_pwd(pwd) == DASHBOARD_PASSWORD:
                 st.session_state.authenticated = True
                 st.session_state.login_time = datetime.now()
             else:
