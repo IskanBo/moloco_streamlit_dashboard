@@ -83,7 +83,7 @@ st.session_state.setdefault("last_update", None)
 #  Sidebar
 # ────────────────────────────────────────────────────────────────
 st.sidebar.title("Навигация")
-menu = st.sidebar.radio("", ["Главная", "Диаграммы", "Сводные таблицы", "Сырые данные"])
+menu = st.sidebar.radio("", ["Главная", "Диаграммы", "Сводные таблицы", "Табличные данные"])
 st.sidebar.markdown("---")
 
 usd_rate, eur_rate = get_rates()
@@ -281,12 +281,45 @@ elif menu == "Сводные таблицы":
     st.header("Сводные таблицы")
     st.info("В разработке")
 
-elif menu == "Сырые данные":
-    st.title("Сырые данные из Google Sheets")
+# -----------------------------------------------------------------
+#  Табличные данные: просмотр и фильтр по дате
+# -----------------------------------------------------------------
+elif menu == "Табличные данные":
+    st.title("Табличные данные из Google Sheets")
+
     if not st.session_state["loaded"]:
-        st.info("Нажмите «Обновить» в боковом меню")
-    else:
-        st.subheader("Moloco Raw")
-        st.dataframe(st.session_state["moloco"])
-        st.subheader("Other Raw")
-        st.dataframe(st.session_state["other"])
+        st.info("Нажмите «Обновить» в боковом меню для загрузки данных")
+        st.stop()
+
+    # ── 1) Moloco ────────────────────────────────────────────────
+    st.subheader("Moloco")
+    df_moloco = st.session_state["moloco"].copy()
+    df_moloco["event_time"] = pd.to_datetime(df_moloco["event_time"]).dt.date
+
+    col1, col2 = st.columns(2)
+    with col1:
+        min_m, max_m = df_moloco["event_time"].min(), df_moloco["event_time"].max()
+        start_m = st.date_input("Начало периода", min_m, key="moloco_start")
+    with col2:
+        end_m = st.date_input("Конец периода", max_m, key="moloco_end")
+
+    mask_m = (df_moloco["event_time"] >= start_m) & (df_moloco["event_time"] <= end_m)
+    st.dataframe(df_moloco.loc[mask_m])
+
+    # ── 2) Other sources ─────────────────────────────────────────
+    st.subheader("Other sources")
+    df_other = st.session_state["other"].copy()
+    # В разных таблицах колонка может называться event_date или event_time
+    dt_col = "event_date" if "event_date" in df_other.columns else "event_time"
+    df_other[dt_col] = pd.to_datetime(df_other[dt_col]).dt.date
+
+    col3, col4 = st.columns(2)
+    with col3:
+        min_o, max_o = df_other[dt_col].min(), df_other[dt_col].max()
+        start_o = st.date_input("Начало периода ", min_o, key="other_start")
+    with col4:
+        end_o = st.date_input("Конец периода ", max_o, key="other_end")
+
+    mask_o = (df_other[dt_col] >= start_o) & (df_other[dt_col] <= end_o)
+    st.dataframe(df_other.loc[mask_o])
+
