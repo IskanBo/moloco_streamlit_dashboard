@@ -121,49 +121,57 @@ if menu == "Главная":
     prev_day = latest - timedelta(days=1)
 
     st.info(
-        "**Этот дашборд служит для ежедневного мониторинга затрат по всем рекламным источникам.**  \n"
         f"Данные отражают **расходы за прошедший день** — {prev_day:%d %B %Y}.",
         icon="ℹ️",
     )
+
 
     # ======================================================================
     #                          KPI-карточки
     # ======================================================================
 
-    # ── 1. Moloco (большая карточка) ───────────────────────────
-    moloco_usd  = df_m.loc[df_m["event_time"] == prev_day, "cost"].map(clean_num).sum()
+    # ► Moloco затраты
+    # ------------------------------------------------------------------
+    moloco_usd = df_m.loc[df_m["event_time"] == prev_day, "cost"].map(clean_num).sum()
     moloco_usd_prev = df_m.loc[df_m["event_time"] == prev_day - timedelta(days=1), "cost"].map(clean_num).sum()
-    moloco_rub  = moloco_usd  * usd_rate if usd_rate else None
+    moloco_rub = moloco_usd * usd_rate if usd_rate else None
     moloco_rub_prev = moloco_usd_prev * usd_rate if usd_rate else None
     delta_pct_moloco = ((moloco_rub - moloco_rub_prev) / moloco_rub_prev * 100) if moloco_rub_prev else 0
 
-    big = st.container(border=True)
-    with big:
+    with st.container():
         st.markdown(
             f"""
-            <div style="text-align:center; padding-top:4px;">
-                <div style="font-size:15px;color:gray;">Moloco&nbsp;<span style="font-size:13px;">(≈ ${moloco_usd:,.0f})</span></div>
-                <div style="font-size:40px;font-weight:600;margin:6px 0;">
-                    {int(moloco_rub):,}&nbsp;₽
-                </div>
-                <div style="color:{'limegreen' if delta_pct_moloco>=0 else 'orangered'};font-size:18px;">
-                    {delta_pct_moloco:+.1f}%
-                </div>
+            <div style="
+                 border:1px solid #444;
+                 border-radius:8px;
+                 padding:18px 22px;
+                 margin-bottom:18px;
+                 ">
+              <div style="font-size:15px;color:gray;">Moloco</div>
+              <div style="font-size:38px;font-weight:600;">
+                  {int(moloco_rub):,}&nbsp;₽
+                  <span style="font-size:14px;color:#A0A0A0;">≈ ${moloco_usd:,.0f}</span>
+              </div>
+              <div style="color:{'limegreen' if delta_pct_moloco >= 0 else 'orangered'};
+                          font-size:18px;">
+                  {delta_pct_moloco:+.1f}%
+              </div>
             </div>
             """,
             unsafe_allow_html=True,
         )
 
-    # ── 2. Other источники (малые карточки 3×2) ────────────────
+    # ► Other sources
+    # ------------------------------------------------------------------
     df_o = st.session_state["other"].copy()
     df_o["event_time"] = pd.to_datetime(
         df_o.get("event_date", df_o.get("event_time"))
     ).dt.date
 
     cards = []
-    for src, g in df_o.groupby("traffic_source"):
-        rub_today = g.loc[g["event_time"] == prev_day, "costs"].map(clean_num).sum()
-        rub_prev  = g.loc[g["event_time"] == prev_day - timedelta(days=1), "costs"].map(clean_num).sum()
+    for src, grp in df_o.groupby("traffic_source"):
+        rub_today = grp.loc[grp["event_time"] == prev_day, "costs"].map(clean_num).sum()
+        rub_prev = grp.loc[grp["event_time"] == prev_day - timedelta(days=1), "costs"].map(clean_num).sum()
         usd_today = rub_today / usd_rate if usd_rate else None
         delta_pct = ((rub_today - rub_prev) / rub_prev * 100) if rub_prev else 0
         cards.append((src, rub_today, usd_today, delta_pct))
@@ -171,23 +179,29 @@ if menu == "Главная":
     cols = st.columns(3, gap="large")
     for idx, (src, rub, usd, dlt) in enumerate(cards):
         with cols[idx % 3]:
-            st.container(border=True).markdown(
+            st.markdown(
                 f"""
-                <div style="text-align:center; padding:6px 0;">
-                    <div style="font-size:15px;color:gray;">{src}</div>
-                    <div style="font-size:30px;font-weight:600;">
-                        {int(rub):,}&nbsp;₽
-                        <span style="font-size:12px;color:#A0A0A0;">≈ ${usd:,.0f}</span>
-                    </div>
-                    <div style="color:{'limegreen' if dlt>=0 else 'orangered'};font-size:13px;">
-                        {dlt:+.1f}%
-                    </div>
+                <div style="
+                     border:1px solid #444;
+                     border-radius:8px;
+                     padding:16px 20px;
+                     margin-bottom:18px;
+                     text-align:center;">
+                  <div style="font-size:14px;color:gray;">{src}</div>
+                  <div style="font-size:28px;font-weight:600;">
+                      {int(rub):,}&nbsp;₽
+                      <span style="font-size:12px;color:#A0A0A0;">≈ ${usd:,.0f}</span>
+                  </div>
+                  <div style="color:{'limegreen' if dlt >= 0 else 'orangered'};
+                              font-size:13px;">
+                      {dlt:+.1f}%
+                  </div>
                 </div>
                 """,
                 unsafe_allow_html=True,
             )
         if (idx % 3) == 2 and idx != len(cards) - 1:
-            cols = st.columns(3, gap="large")  # новая строка
+            cols = st.columns(3, gap="large")
 
     # ======================================================================
     #                       Тренд-график
