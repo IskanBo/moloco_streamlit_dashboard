@@ -105,7 +105,7 @@ st.sidebar.caption("✅ Данные загружены" if st.session_state["lo
 #  Главная
 # ────────────────────────────────────────────────────────────────
 if menu == "Главная":
-    st.title("Dashboard: Затраты рекламы")
+    st.title("Dashboard: Затраты на рекламу")
     st.markdown("Добро пожаловать в дашборд мониторинга затрат по источникам трафика.")
 
     if not st.session_state["loaded"]:
@@ -170,11 +170,9 @@ if menu == "Главная":
 
     # делаем все метрики «карточками»
     style_metric_cards(
-        background_color="#FFFFFF",  # белая «карточка»
-        text_color="#000000",  # ✸ тёмный текст — будет виден на белом
-        border_color="#E0E0E0",
+        background_color="rgba(255,255,255,0.05)",  # лёгкая «дымка», видно на Dark
+        border_color="#444444",  # тонкий тёмный бордер
         border_radius_px=12,
-        border_left_color="transparent",
         box_shadow=True,
     )
 
