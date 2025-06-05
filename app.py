@@ -105,137 +105,156 @@ st.sidebar.caption("✅ Данные загружены" if st.session_state["lo
 #  Главная
 # ────────────────────────────────────────────────────────────────
 if menu == "Главная":
-    st.title("Dashboard: Затраты на рекламу")
-    st.markdown("Добро пожаловать в дашборд мониторинга затрат по источникам трафика.")
+    st.title("Dashboard: Затраты рекламы")
+    st.markdown(
+        "Добро пожаловать в дашборд мониторинга затрат по источникам трафика."
+    )
 
     if not st.session_state["loaded"]:
         st.info("Нажмите «Обновить» в боковом меню, чтобы загрузить данные")
         st.stop()
 
-    # --- данные Moloco ---
+    # ---------- дата отчёта и информационный баннер ----------
     df_m = st.session_state["moloco"].copy()
     df_m["event_time"] = pd.to_datetime(df_m["event_time"]).dt.date
-    latest   = df_m["event_time"].max()
+    latest  = df_m["event_time"].max()
     prev_day = latest - timedelta(days=1)
 
     st.info(
-        "**Данные отражают расходы за прошедший день** — "
-        f"{prev_day:%d %B %Y}.",
+        "**Этот дашборд служит для ежедневного мониторинга затрат по всем рекламным источникам.**  \n"
+        f"Данные отражают **расходы за прошедший день** — {prev_day:%d %B %Y}.",
         icon="ℹ️",
     )
 
-    # ---------- KPI Moloco ----------
-    vals_today  = df_m[df_m["event_time"] == prev_day]["cost"].dropna().astype(str)
-    vals_yest   = df_m[df_m["event_time"] == prev_day - timedelta(days=1)]["cost"].dropna().astype(str)
+    # ======================================================================
+    #                          KPI-карточки
+    # ======================================================================
 
-    curr_usd = sum(clean_num(v) for v in vals_today)
-    prev_usd = sum(clean_num(v) for v in vals_yest)
+    # ── 1. Moloco (большая карточка) ───────────────────────────
+    moloco_usd  = df_m.loc[df_m["event_time"] == prev_day, "cost"].map(clean_num).sum()
+    moloco_usd_prev = df_m.loc[df_m["event_time"] == prev_day - timedelta(days=1), "cost"].map(clean_num).sum()
+    moloco_rub  = moloco_usd  * usd_rate if usd_rate else None
+    moloco_rub_prev = moloco_usd_prev * usd_rate if usd_rate else None
+    delta_pct_moloco = ((moloco_rub - moloco_rub_prev) / moloco_rub_prev * 100) if moloco_rub_prev else 0
 
-    if usd_rate:
-        curr_rub = curr_usd * usd_rate
-        prev_rub = prev_usd * usd_rate
-        delta_pct = (curr_rub - prev_rub) / prev_rub * 100 if prev_rub else 0
-        value_moloco = f"{int(curr_rub):,} ₽".replace(",", " ")
-    else:
-        curr_rub   = None
-        delta_pct  = (curr_usd - prev_usd) / prev_usd * 100 if prev_usd else 0
-        value_moloco = f"{int(curr_usd):,} $".replace(",", " ")
+    big = st.container(border=True)
+    with big:
+        st.markdown(
+            f"""
+            <div style="text-align:center; padding-top:4px;">
+                <div style="font-size:15px;color:gray;">Moloco&nbsp;<span style="font-size:13px;">(≈ ${moloco_usd:,.0f})</span></div>
+                <div style="font-size:40px;font-weight:600;margin:6px 0;">
+                    {int(moloco_rub):,}&nbsp;₽
+                </div>
+                <div style="color:{'limegreen' if delta_pct_moloco>=0 else 'orangered'};font-size:18px;">
+                    {delta_pct_moloco:+.1f}%
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
 
-    delta_text = f"{delta_pct:+.1f}%"
-    label_moloco = f"Moloco (≈ ${int(curr_usd):,})".replace(",", " ")
-
-    st.metric(label=label_moloco, value=value_moloco, delta=delta_text)
-
-    # ---------- KPI прочие источники ----------
+    # ── 2. Other источники (малые карточки 3×2) ────────────────
     df_o = st.session_state["other"].copy()
-    df_o["event_time"] = pd.to_datetime(df_o.get("event_date", df_o.get("event_time"))).dt.date
+    df_o["event_time"] = pd.to_datetime(
+        df_o.get("event_date", df_o.get("event_time"))
+    ).dt.date
 
-    items = []
-    for src, grp in df_o.groupby("traffic_source"):
-        cur_val  = sum(clean_num(v) for v in grp[grp["event_time"] == prev_day]["costs"].dropna().astype(str))
-        prev_val = sum(clean_num(v) for v in grp[grp["event_time"] == prev_day - timedelta(days=1)]["costs"].dropna().astype(str))
-        delta    = (cur_val - prev_val) / prev_val * 100 if prev_val else 0
-        items.append((src, cur_val, delta))
+    cards = []
+    for src, g in df_o.groupby("traffic_source"):
+        rub_today = g.loc[g["event_time"] == prev_day, "costs"].map(clean_num).sum()
+        rub_prev  = g.loc[g["event_time"] == prev_day - timedelta(days=1), "costs"].map(clean_num).sum()
+        usd_today = rub_today / usd_rate if usd_rate else None
+        delta_pct = ((rub_today - rub_prev) / rub_prev * 100) if rub_prev else 0
+        cards.append((src, rub_today, usd_today, delta_pct))
 
-    # вывод карточек в две строки
-    half = (len(items) + 1) // 2
-    for row in [items[:half], items[half:]]:
-        cols = st.columns(len(row))
-        for (src, total, d), col in zip(row, cols):
-            col.metric(
-                label=src,
-                value=f"{int(total):,} ₽".replace(",", " "),
-                delta=f"{d:+.1f}%"
+    cols = st.columns(3, gap="large")
+    for idx, (src, rub, usd, dlt) in enumerate(cards):
+        with cols[idx % 3]:
+            st.container(border=True).markdown(
+                f"""
+                <div style="text-align:center; padding:6px 0;">
+                    <div style="font-size:15px;color:gray;">{src}</div>
+                    <div style="font-size:30px;font-weight:600;">
+                        {int(rub):,}&nbsp;₽
+                        <span style="font-size:12px;color:#A0A0A0;">≈ ${usd:,.0f}</span>
+                    </div>
+                    <div style="color:{'limegreen' if dlt>=0 else 'orangered'};font-size:13px;">
+                        {dlt:+.1f}%
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
             )
+        if (idx % 3) == 2 and idx != len(cards) - 1:
+            cols = st.columns(3, gap="large")  # новая строка
 
-    # делаем все метрики «карточками»
-    style_metric_cards(
-        background_color="rgba(255,255,255,0.05)",  # лёгкая «дымка», видно на Dark
-        border_color="#444444",  # тонкий тёмный бордер
-        border_radius_px=12,
-        box_shadow=True,
-    )
-
-    # ---------- Трендовый график ----------
+    # ======================================================================
+    #                       Тренд-график
+    # ======================================================================
     st.divider()
     st.header("Тренд затрат по источникам")
 
-    # Moloco в ₽
+    # --- подготовка данных ---
     moloco_df = df_m.copy()
-    moloco_df["cost_rub"] = moloco_df["cost"].apply(clean_num) * (usd_rate or 1)
-
-    mol_daily = (
-        moloco_df.groupby("event_time")["cost_rub"]
-        .sum().reset_index().assign(traffic_source="Moloco")
+    moloco_df["cost_usd"] = moloco_df["cost"].map(clean_num)
+    moloco_df["cost_rub"] = moloco_df["cost_usd"] * usd_rate if usd_rate else float("nan")
+    moloco_daily = (
+        moloco_df.groupby("event_time")["cost_rub"].sum().reset_index().assign(traffic_source="Moloco")
     )
 
-    # Другие источники (и так ₽)
-    df_o["cost_num"] = df_o["costs"].apply(clean_num)
+    df_o["cost_rub"] = df_o["costs"].map(clean_num)
     other_daily = (
-        df_o.groupby(["event_time", "traffic_source"])["cost_num"]
-        .sum().reset_index().rename(columns={"cost_num": "cost_rub"})
+        df_o.groupby(["event_time", "traffic_source"])["cost_rub"].sum().reset_index()
     )
 
-    chart_df = pd.concat([mol_daily, other_daily], ignore_index=True)
+    chart_df = pd.concat([moloco_daily, other_daily], ignore_index=True)
 
-    sources = chart_df["traffic_source"].unique().tolist()
-    default_sel = ["Moloco"]
-    visible = st.multiselect("Источники на графике", sources, default_sel, key="src_plot")
+    # --- фильтр источников ---
+    sources_all = chart_df["traffic_source"].unique().tolist()
+    sel_sources = st.multiselect(
+        "Источники на графике",
+        options=sources_all,
+        default=["Moloco"],
+        key="sel_sources_chart",
+    )
+    if not sel_sources:
+        st.warning("Выберите хотя бы один источник")
+        st.stop()
 
-    data_plot = chart_df[chart_df["traffic_source"].isin(visible)]
+    chart_df = chart_df[chart_df["traffic_source"].isin(sel_sources)]
 
-    if not data_plot.empty:
-        fig = px.line(
-            data_plot,
-            x="event_time",
-            y="cost_rub",
-            color="traffic_source",
-            labels={"event_time": "Дата", "cost_rub": "Затраты (₽)", "traffic_source": "Источник"},
-            color_discrete_sequence=px.colors.qualitative.Pastel,
-        )
-
-        fig.update_layout(
-            xaxis=dict(
-                rangeselector=dict(
-                    buttons=[
-                        dict(count=7, label="Неделя", step="day", stepmode="backward"),
-                        dict(count=1, label="Месяц", step="month", stepmode="backward"),
-                        dict(step="all", label="Весь период")
-                    ]
-                ),
-                rangeslider=dict(visible=True),
-                type="date",
+    # --- построение ---
+    fig = px.line(
+        chart_df,
+        x="event_time",
+        y="cost_rub",
+        color="traffic_source",
+        labels=dict(event_time="Дата", cost_rub="Затраты (₽)", traffic_source="Источник"),
+    )
+    fig.update_layout(colorway=px.colors.qualitative.Pastel)
+    fig.update_layout(
+        xaxis=dict(
+            rangeselector=dict(
+                buttons=[
+                    dict(count=7, label="Неделя", step="day", stepmode="backward"),
+                    dict(count=1, label="Месяц", step="month", stepmode="backward"),
+                    dict(step="all", label="Всё"),
+                ]
             ),
-            yaxis=dict(tickformat=",.0f"),
+            rangeslider=dict(visible=True),
+            type="date",
         )
-        fig.update_traces(marker=dict(size=4), line=dict(width=2))
-        st.plotly_chart(fig, use_container_width=True)
-    else:
-        st.info("Выберите хотя бы один источник для отображения графика.")
+    )
+    fig.update_traces(marker=dict(size=4), line=dict(width=2))
+    fig.update_yaxes(tickformat=",.0f")
+
+    st.plotly_chart(fig, use_container_width=True)
 
 # -----------------------------------------------------------------
-#  Остальные вкладки-п заглушки
+#  Остальные вкладки-заглушки
 # -----------------------------------------------------------------
+
 elif menu == "Диаграммы":
     st.header("Диаграммы")
     st.info("В разработке")
