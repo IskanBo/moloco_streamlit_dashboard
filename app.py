@@ -6,10 +6,6 @@ import pytz
 from pycbrf.toolbox import ExchangeRates
 import plotly.express as px
 import re
-
-# ────────────────────────────────────────────────────────────────
-#  streamlit-extras: превращаем st.metric в красивые «карточки»
-# ────────────────────────────────────────────────────────────────
 from streamlit_extras.metric_cards import style_metric_cards
 
 # ────────────────────────────────────────────────────────────────
@@ -174,7 +170,8 @@ if menu == "Главная":
 
     # делаем все метрики «карточками»
     style_metric_cards(
-        background_color="#FFFFFF",
+        background_color="#FFFFFF",  # белая «карточка»
+        text_color="#000000",  # ✸ тёмный текст — будет виден на белом
         border_color="#E0E0E0",
         border_radius_px=12,
         border_left_color="transparent",
