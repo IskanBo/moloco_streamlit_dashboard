@@ -166,9 +166,16 @@ if menu == "Главная":
     # ► Other sources
     # ------------------------------------------------------------------
     df_o = st.session_state["other"].copy()
-    df_o["event_time"] = pd.to_datetime(
-        df_o[[c for c in df_o.columns if c.strip().lower() in ("event_date", "event_time")][0]]
-    ).dt.date
+    date_col = next(
+        (c for c in df_o.columns if c.strip().lower() in ("event_date", "event_time")),
+        None,
+    )
+
+    if date_col is None:  # если не нашли вовсе
+        st.error("Не найден столбец 'event_date' или 'event_time' в Other sources")
+        st.stop()
+
+    df_o["event_time"] = pd.to_datetime(df_o[date_col]).dt.date
 
     cards = []
     for src, grp in df_o.groupby("traffic_source"):
