@@ -166,7 +166,7 @@ if menu == "Главная":
     # ► Other sources
     # ------------------------------------------------------------------
     df_o = st.session_state["other"].copy()
-    df_o["event_time"] = pd.to_datetime(df_o.get("event_date", df_o.get("event_time"))).dt.date
+    df_o["event_time"] = pd.to_datetime(df_o["event_date"]).dt.date
 
     cards = []
     for src, grp in df_o.groupby("traffic_source"):
