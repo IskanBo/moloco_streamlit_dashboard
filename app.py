@@ -189,10 +189,9 @@ if menu == "Главная":
         if (i % 3) == 2 and i != len(cards) - 1:
             row_cols = st.columns(3, gap="large")
 
-
-    # ======================================================================
-    #                       Тренд-график
-    # ======================================================================
+    # ────────────────────────────────────────────────────────────────
+    #  Тренд‑график
+    # ────────────────────────────────────────────────────────────────
     st.divider()
     st.header("Тренд затрат по источникам")
 
@@ -201,7 +200,8 @@ if menu == "Главная":
     moloco_df["cost_usd"] = moloco_df["cost"].map(clean_num)
     moloco_df["cost_rub"] = moloco_df["cost_usd"] * usd_rate if usd_rate else float("nan")
     moloco_daily = (
-        moloco_df.groupby("event_time")["cost_rub"].sum().reset_index().assign(traffic_source="Moloco")
+        moloco_df.groupby("event_time")["cost_rub"].sum().reset_index()
+        .assign(traffic_source="Moloco")
     )
 
     df_o["cost_rub"] = df_o["costs"].map(clean_num)
@@ -210,6 +210,11 @@ if menu == "Главная":
     )
 
     chart_df = pd.concat([moloco_daily, other_daily], ignore_index=True)
+
+    # ---------- НОВЫЙ БЛОК: убираем неполный последний день ----------
+    latest_dt = chart_df["event_time"].max()
+    chart_df = chart_df[chart_df["event_time"] < latest_dt]
+    # ---------------------------------------------------------------
 
     # --- фильтр источников ---
     sources_all = chart_df["traffic_source"].unique().tolist()
