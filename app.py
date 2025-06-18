@@ -259,123 +259,106 @@ if menu == "Главная":
 
 
     # ────────────────────────────────────────────────────────────────
-    #  TOP‑10 Bayer id (Moloco vs. другие источники)
+    #  TOP-10 Bayer id по затратам
     # ────────────────────────────────────────────────────────────────
     @st.cache_data(show_spinner=False)
     def _prepare_bayer_dfs(df_m: pd.DataFrame, df_o: pd.DataFrame, usd_rate: float):
-        """Приводит данные к единому формату для расчётов TOP‑10."""
-        # Moloco
-        moloco = df_m.rename(columns={"Bayer id": "bayer_id"}).copy()
-        moloco["event_time"] = pd.to_datetime(moloco["event_time"]).dt.date
-        moloco["bayer_id"] = moloco["bayer_id"].astype(str)
-        moloco["cost_rub"] = moloco["cost"].map(clean_num) * usd_rate
-
-        # Other sources
+        """Унифицируем колонки и переведём всё в cost_rub."""
+        moloco = (
+            df_m.rename(columns={"Bayer id": "bayer_id"})
+            .assign(
+                event_time=pd.to_datetime(df_m["event_time"]).dt.date,
+                bayer_id=lambda d: d["bayer_id"].astype(str),
+                cost_rub=lambda d: d["cost"].map(clean_num) * usd_rate,
+            )
+        )
         other = df_o.copy()
         other.columns = other.columns.str.replace(r"\s+", "", regex=True).str.lower()
-        other = other.rename(columns={"bayerid": "bayer_id"})
-        dt_col = "event_date" if "event_date" in other.columns else "event_time"
-        other["event_time"] = pd.to_datetime(other[dt_col]).dt.date
-        other["bayer_id"] = other["bayer_id"].astype(str)
-        other["cost_rub"] = other["costs"].map(clean_num)
-
+        other = (
+            other.rename(columns={"bayerid": "bayer_id"})
+            .assign(
+                event_time=lambda d: pd.to_datetime(d.get("event_date", d["event_time"])).dt.date,
+                bayer_id=lambda d: d["bayer_id"].astype(str),
+                cost_rub=lambda d: d["costs"].map(clean_num),
+            )
+        )
         return moloco, other
 
 
-    def _build_top10_moloco(df: pd.DataFrame, start: date, end: date) -> px.bar:
-        """Горизонтальный бар‑чарт TOP‑10 Bayer для Moloco."""
-        mask = (df["event_time"] >= start) & (df["event_time"] <= end)
-        top10 = (df.loc[mask]
-                 .groupby("bayer_id", as_index=False)["cost_rub"].sum()
-                 .nlargest(10, "cost_rub")
-                 .sort_values("cost_rub", ascending=False))
-        top10["bayer_id_str"] = top10["bayer_id"]  # легенда – как текст
-
-        fig = px.bar(
-            top10,
-            x="cost_rub",
-            y="bayer_id_str",
-            orientation="h",
-            labels=dict(cost_rub="Затраты (₽)", bayer_id_str="Bayer id"),
-        )
-
-        fig.update_yaxes(
-            categoryorder="array",
-            categoryarray=top10["bayer_id_str"].tolist()
-        )
-        fig.update_layout(
-            showlegend=False,
-            title_text="Moloco • TOP‑10 Bayer id",
-            bargap=0.25,
-            height=max(400, 40 * len(top10))  # «толстые» столбцы
-        )
-        fig.update_traces(marker_line_width=0)
-        return fig
-
-
-    def _build_top10_other(df: pd.DataFrame, start: date, end: date) -> px.bar:
-        """Горизонтальный STACK‑bar TOP‑10 Bayer для всех остальных источников."""
-        mask = (df["event_time"] >= start) & (df["event_time"] <= end)
-        agg = (df.loc[mask]
-               .groupby(["bayer_id", "traffic_source"], as_index=False)["cost_rub"].sum())
-
-        # определяем TOP‑10 по суммарным затратам
-        tot = agg.groupby("bayer_id", as_index=False)["cost_rub"].sum()
-        top_ids = tot.nlargest(10, "cost_rub")["bayer_id"].tolist()
-        top10 = agg[agg["bayer_id"].isin(top_ids)]
-
-        # порядок категорий – по суммарным затратам (от большего к меньшему)
-        order = (tot[tot["bayer_id"].isin(top_ids)]
-                 .sort_values("cost_rub", ascending=False)["bayer_id"].astype(str).tolist())
-        top10["bayer_id_str"] = top10["bayer_id"].astype(str)
-
-        fig = px.bar(
-            top10,
-            x="cost_rub",
-            y="bayer_id_str",
-            color="traffic_source",
-            orientation="h",
-            labels=dict(cost_rub="Затраты (₽)", bayer_id_str="Bayer id", traffic_source="Источник"),
-            title="Другие источники • TOP‑10 Bayer id",
-        )
-
-        fig.update_yaxes(categoryorder="array", categoryarray=order)
-        fig.update_layout(
-            barmode="stack",
-            bargap=0.25,
-            height=max(400, 40 * len(order))
-        )
-        fig.update_traces(marker_line_width=0)
-        return fig
-
-
-    # ---------- подготовка данных ----------
     moloco_all, other_all = _prepare_bayer_dfs(df_m, df_o, usd_rate)
 
     # диапазон дат
-    global_min = min(moloco_all["event_time"].min(), other_all["event_time"].min())
-    global_max = max(moloco_all["event_time"].max(), other_all["event_time"].max())
+    min_dt = min(moloco_all["event_time"].min(), other_all["event_time"].min())
+    max_dt = max(moloco_all["event_time"].max(), other_all["event_time"].max())
 
     st.divider()
-    st.header("TOP‑10 Bayer id по затратам")
+    st.header("TOP-10 Bayer id по затратам")
 
-    col_d1, col_d2 = st.columns(2, gap="medium")
-    with col_d1:
-        d_start = st.date_input("Начало периода", global_min, key="top_bayer_start")
-    with col_d2:
-        d_end = st.date_input("Конец периода", global_max, key="top_bayer_end")
-
+    # выбор периода
+    c1, c2 = st.columns(2, gap="medium")
+    with c1:
+        d_start = st.date_input("Начало периода", min_dt, key="b_start")
+    with c2:
+        d_end = st.date_input("Конец периода", max_dt, key="b_end")
     if d_start > d_end:
-        st.error("❌ Начальная дата позже конечной");
+        st.error("Начальная дата позже конечной");
         st.stop()
 
-    # ── графики ─────────────────────────────────────────────────────
-    c1, c2 = st.columns(2, gap="large")
-    with c1:
-        st.plotly_chart(_build_top10_moloco(moloco_all, d_start, d_end), use_container_width=True)
+    # --- Top-10 Moloco ---
+    df_m_top = (
+        moloco_all[(moloco_all["event_time"] >= d_start) & (moloco_all["event_time"] <= d_end)]
+        .groupby("bayer_id", as_index=False)["cost_rub"].sum()
+        .nlargest(10, "cost_rub")
+    )
+    # порядок: от меньшей к большей для нормального восприятия слева→справа
+    order_m = df_m_top.sort_values("cost_rub")["bayer_id"].tolist()
 
-    with c2:
-        st.plotly_chart(_build_top10_other(other_all, d_start, d_end), use_container_width=True)
+    fig1 = px.bar(
+        df_m_top.assign(bayer_id=lambda d: pd.Categorical(d["bayer_id"], categories=order_m, ordered=True)),
+        x="bayer_id",
+        y="cost_rub",
+        labels={"bayer_id": "Bayer id", "cost_rub": "Затраты (₽)"},
+    )
+    fig1.update_layout(
+        xaxis=dict(categoryorder="array", categoryarray=order_m),
+        bargap=0.1,  # тонкий зазор → толстые бары
+        height=400,
+        title="Moloco • TOP-10 Bayer id",
+        showlegend=False,
+    )
+    fig1.update_traces(marker_line_width=0)
+
+    # --- Top-10 Other (stacked) ---
+    df_o_agg = (
+        other_all[(other_all["event_time"] >= d_start) & (other_all["event_time"] <= d_end)]
+        .groupby(["bayer_id", "traffic_source"], as_index=False)["cost_rub"].sum()
+    )
+    tot_o = df_o_agg.groupby("bayer_id", as_index=False)["cost_rub"].sum().nlargest(10, "cost_rub")
+    order_o = tot_o.sort_values("cost_rub")["bayer_id"].tolist()
+
+    fig2 = px.bar(
+        df_o_agg[df_o_agg["bayer_id"].isin(order_o)]
+        .assign(bayer_id=lambda d: pd.Categorical(d["bayer_id"], categories=order_o, ordered=True)),
+        x="bayer_id",
+        y="cost_rub",
+        color="traffic_source",
+        labels={"bayer_id": "Bayer id", "cost_rub": "Затраты (₽)", "traffic_source": "Источник"},
+    )
+    fig2.update_layout(
+        xaxis=dict(categoryorder="array", categoryarray=order_o),
+        bargap=0.1,
+        barmode="stack",
+        height=400,
+        title="Другие источники • TOP-10 Bayer id",
+    )
+    fig2.update_traces(marker_line_width=0)
+
+    # выводим в две колонки
+    col_a, col_b = st.columns(2, gap="large")
+    with col_a:
+        st.plotly_chart(fig1, use_container_width=True)
+    with col_b:
+        st.plotly_chart(fig2, use_container_width=True)
 
 # -----------------------------------------------------------------
 #  Остальные вкладки-заглушки
