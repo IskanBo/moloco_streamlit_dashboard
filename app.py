@@ -261,86 +261,104 @@ if menu == "Главная":
     # ────────────────────────────────────────────────────────────────
     #  TOP‑10 Bayer id (Moloco vs. другие источники)
     # ────────────────────────────────────────────────────────────────
-
     @st.cache_data(show_spinner=False)
-    def _prepare_bayer_dfs(df_m: pd.DataFrame, df_o: pd.DataFrame, usd_rate: float) -> tuple[
-        pd.DataFrame, pd.DataFrame]:
-        """Готовит датафреймы с затратами в рублях и единым названием колонки `bayer_id`."""
-        # --- Moloco ---
-        moloco = df_m.copy()
-        moloco.rename(columns={"Bayer id": "bayer_id"}, inplace=True)  # унифицируем название
+    def _prepare_bayer_dfs(df_m: pd.DataFrame, df_o: pd.DataFrame, usd_rate: float):
+        """Приводит данные к единому формату для расчётов TOP‑10."""
+        # Moloco
+        moloco = df_m.rename(columns={"Bayer id": "bayer_id"}).copy()
         moloco["event_time"] = pd.to_datetime(moloco["event_time"]).dt.date
+        moloco["bayer_id"] = moloco["bayer_id"].astype(str)
         moloco["cost_rub"] = moloco["cost"].map(clean_num) * usd_rate
 
-        # --- Other ---
+        # Other sources
         other = df_o.copy()
         other.columns = other.columns.str.replace(r"\s+", "", regex=True).str.lower()
-        other.rename(columns={"bayerid": "bayer_id"}, inplace=True)
+        other = other.rename(columns={"bayerid": "bayer_id"})
         dt_col = "event_date" if "event_date" in other.columns else "event_time"
-        other[dt_col] = pd.to_datetime(other[dt_col]).dt.date
-        other["event_time"] = other[dt_col]  # приводим к единому названию
+        other["event_time"] = pd.to_datetime(other[dt_col]).dt.date
+        other["bayer_id"] = other["bayer_id"].astype(str)
         other["cost_rub"] = other["costs"].map(clean_num)
 
         return moloco, other
 
 
     def _build_top10_moloco(df: pd.DataFrame, start: date, end: date) -> px.bar:
-        """Горизонтальный бар‑чарт TOP‑10 Bayer из Moloco."""
+        """Горизонтальный бар‑чарт TOP‑10 Bayer для Moloco."""
         mask = (df["event_time"] >= start) & (df["event_time"] <= end)
-        top10 = (
-            df.loc[mask]
-            .groupby("bayer_id", as_index=False)["cost_rub"].sum()
-            .nlargest(10, "cost_rub")
-            .sort_values("cost_rub")  # снизу – самый дорогой
-        )
+        top10 = (df.loc[mask]
+                 .groupby("bayer_id", as_index=False)["cost_rub"].sum()
+                 .nlargest(10, "cost_rub")
+                 .sort_values("cost_rub", ascending=False))
+        top10["bayer_id_str"] = top10["bayer_id"]  # легенда – как текст
+
         fig = px.bar(
             top10,
             x="cost_rub",
-            y="bayer_id",
+            y="bayer_id_str",
             orientation="h",
-            labels=dict(cost_rub="Затраты (₽)", bayer_id="Bayer id"),
+            labels=dict(cost_rub="Затраты (₽)", bayer_id_str="Bayer id"),
         )
-        fig.update_yaxes(categoryorder="total ascending")
-        fig.update_layout(showlegend=False, title_text="Moloco • TOP‑10 Bayer id")
+
+        fig.update_yaxes(
+            categoryorder="array",
+            categoryarray=top10["bayer_id_str"].tolist()
+        )
+        fig.update_layout(
+            showlegend=False,
+            title_text="Moloco • TOP‑10 Bayer id",
+            bargap=0.25,
+            height=max(400, 40 * len(top10))  # «толстые» столбцы
+        )
+        fig.update_traces(marker_line_width=0)
         return fig
 
 
-    def _build_top10_other(df: pd.DataFrame, start: date, end: date, sources: list[str]) -> px.bar:
-        """Горизонтальный накопительный бар‑чарт TOP‑10 Bayer для выбранных источников."""
-        mask = (df["event_time"] >= start) & (df["event_time"] <= end) & (df["traffic_source"].isin(sources))
-        # агрегируем по Bayer‑id + source
-        agg = (
-            df.loc[mask]
-            .groupby(["bayer_id", "traffic_source"], as_index=False)["cost_rub"].sum()
-        )
-        # выбираем TOP‑10 Bayer по суммарным затратам
+    def _build_top10_other(df: pd.DataFrame, start: date, end: date) -> px.bar:
+        """Горизонтальный STACK‑bar TOP‑10 Bayer для всех остальных источников."""
+        mask = (df["event_time"] >= start) & (df["event_time"] <= end)
+        agg = (df.loc[mask]
+               .groupby(["bayer_id", "traffic_source"], as_index=False)["cost_rub"].sum())
+
+        # определяем TOP‑10 по суммарным затратам
         tot = agg.groupby("bayer_id", as_index=False)["cost_rub"].sum()
-        top_ids = tot.nlargest(10, "cost_rub")["bayer_id"]
-        top_df = agg[agg["bayer_id"].isin(top_ids)].sort_values("cost_rub")
+        top_ids = tot.nlargest(10, "cost_rub")["bayer_id"].tolist()
+        top10 = agg[agg["bayer_id"].isin(top_ids)]
+
+        # порядок категорий – по суммарным затратам (от большего к меньшему)
+        order = (tot[tot["bayer_id"].isin(top_ids)]
+                 .sort_values("cost_rub", ascending=False)["bayer_id"].astype(str).tolist())
+        top10["bayer_id_str"] = top10["bayer_id"].astype(str)
+
         fig = px.bar(
-            top_df,
+            top10,
             x="cost_rub",
-            y="bayer_id",
+            y="bayer_id_str",
             color="traffic_source",
             orientation="h",
-            labels=dict(cost_rub="Затраты (₽)", bayer_id="Bayer id", traffic_source="Источник"),
+            labels=dict(cost_rub="Затраты (₽)", bayer_id_str="Bayer id", traffic_source="Источник"),
             title="Другие источники • TOP‑10 Bayer id",
         )
-        fig.update_yaxes(categoryorder="total ascending")
+
+        fig.update_yaxes(categoryorder="array", categoryarray=order)
+        fig.update_layout(
+            barmode="stack",
+            bargap=0.25,
+            height=max(400, 40 * len(order))
+        )
+        fig.update_traces(marker_line_width=0)
         return fig
 
 
     # ---------- подготовка данных ----------
     moloco_all, other_all = _prepare_bayer_dfs(df_m, df_o, usd_rate)
 
-    # диапазон дат (общий минимум/максимум для обеих таблиц)
+    # диапазон дат
     global_min = min(moloco_all["event_time"].min(), other_all["event_time"].min())
     global_max = max(moloco_all["event_time"].max(), other_all["event_time"].max())
 
-    st.divider()  # отделяем от тренд‑графика
+    st.divider()
     st.header("TOP‑10 Bayer id по затратам")
 
-    # ── выбор дат ───────────────────────────────────────────────────
     col_d1, col_d2 = st.columns(2, gap="medium")
     with col_d1:
         d_start = st.date_input("Начало периода", global_min, key="top_bayer_start")
@@ -348,31 +366,16 @@ if menu == "Главная":
         d_end = st.date_input("Конец периода", global_max, key="top_bayer_end")
 
     if d_start > d_end:
-        st.error("❌ Начальная дата позже конечной")
+        st.error("❌ Начальная дата позже конечной");
         st.stop()
 
-    # ── выбор источников для правого графика ────────────────────────
-    other_sources_all = sorted(other_all["traffic_source"].unique())
-    sel_other_sources = st.multiselect(
-        "Источники в правом графике",
-        options=other_sources_all,
-        default=other_sources_all,
-        key="sel_other_sources",
-    )
-
-    if not sel_other_sources:
-        st.warning("Выберите хотя бы один источник для правого графика")
-        st.stop()
-
-    # ── сами графики ────────────────────────────────────────────────
+    # ── графики ─────────────────────────────────────────────────────
     c1, c2 = st.columns(2, gap="large")
     with c1:
-        fig_left = _build_top10_moloco(moloco_all, d_start, d_end)
-        st.plotly_chart(fig_left, use_container_width=True)
+        st.plotly_chart(_build_top10_moloco(moloco_all, d_start, d_end), use_container_width=True)
 
     with c2:
-        fig_right = _build_top10_other(other_all, d_start, d_end, sel_other_sources)
-        st.plotly_chart(fig_right, use_container_width=True)
+        st.plotly_chart(_build_top10_other(other_all, d_start, d_end), use_container_width=True)
 
 # -----------------------------------------------------------------
 #  Остальные вкладки-заглушки
