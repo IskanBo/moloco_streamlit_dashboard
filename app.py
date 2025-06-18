@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, date
 import pytz
 from pycbrf.toolbox import ExchangeRates
 import plotly.express as px
+import plotly.graph_objects as go
 import re
 from streamlit_extras.metric_cards import style_metric_cards
 
@@ -269,7 +270,7 @@ if menu == "Главная":
             .assign(
                 event_time=lambda d: pd.to_datetime(d["event_time"]).dt.date,
                 bayer_id=lambda d: d["bayer_id"].astype(str),
-                cost_rub=lambda d: d["cost"].map(clean_num) * usd_rate
+                cost_rub=lambda d: d["cost"].map(clean_num) * usd_rate,
             )
         )
         other = (
@@ -280,7 +281,7 @@ if menu == "Главная":
                     d.get("event_date", d["event_time"])
                 ).dt.date,
                 bayer_id=lambda d: d["bayer_id"].astype(str),
-                cost_rub=lambda d: d["costs"].map(clean_num)
+                cost_rub=lambda d: d["costs"].map(clean_num),
             )
         )
         return moloco, other
@@ -288,83 +289,89 @@ if menu == "Главная":
 
     moloco_all, other_all = _prepare_bayer_dfs(df_m, df_o, usd_rate)
 
-    # выбор диапазона
+    # ── выбор диапазона дат ─────────────────────────────────────────
     min_dt = min(moloco_all["event_time"].min(), other_all["event_time"].min())
     max_dt = max(moloco_all["event_time"].max(), other_all["event_time"].max())
-
     st.divider()
     st.header("TOP-10 Bayer id по затратам")
-
-    c1, c2 = st.columns(2, gap="medium")
-    with c1:
+    c_start, c_end = st.columns(2)
+    with c_start:
         d_start = st.date_input("Начало периода", min_dt, key="top_start")
-    with c2:
+    with c_end:
         d_end = st.date_input("Конец периода", max_dt, key="top_end")
     if d_start > d_end:
-        st.error("Начальная дата позже конечной");
+        st.error("Начальная дата позже конечной")
         st.stop()
 
-    # ── 1) Moloco ──────────────────────────────────────────────
+    # ── 1) Moloco: агрегируем и берём TOP-10 ────────────────────────
     moloco_agg = (
         moloco_all
         .query("@d_start <= event_time <= @d_end")
         .groupby("bayer_id", as_index=False)["cost_rub"].sum()
     )
     moloco_top = moloco_agg.nlargest(10, "cost_rub").sort_values("cost_rub", ascending=True)
-    fig1 = px.bar(
-        moloco_top,
-        x="cost_rub",
-        y="bayer_id",
-        orientation="h",
-        labels={"cost_rub": "Затраты (₽)", "bayer_id": "Bayer id"},
-        title="Moloco ● TOP-10 Bayer id",
-    )
-    fig1.update_layout(
-        yaxis={"categoryorder": "array", "categoryarray": moloco_top["bayer_id"].tolist()},
-        bargap=0.2,
-        height=40 * len(moloco_top) + 100,
-        showlegend=False,
-    )
-    fig1.update_traces(marker_line_width=0)
+    ids_m = moloco_top["bayer_id"].tolist()
 
-    # ── 2) Другие источники (stacked) ────────────────────────
+    fig1 = go.Figure(go.Bar(
+        x=moloco_top["cost_rub"],
+        y=moloco_top["bayer_id"],
+        orientation="h",
+        width=0.6,  # толщина баров
+        marker=dict(line=dict(width=0)),  # без рамки
+    ))
+    fig1.update_layout(
+        title="Moloco ● TOP-10 Bayer id",
+        xaxis_title="Затраты (₽)",
+        yaxis=dict(
+            title="Bayer id",
+            type="category",
+            categoryorder="array",
+            categoryarray=ids_m  # только эти 10
+        ),
+        height=60 * len(ids_m) + 100,
+        margin=dict(l=120, r=20, t=50, b=50),
+    )
+    # ── 2) Другие источники: stacked TOP-10 ───────────────────────
     other_agg = (
         other_all
         .query("@d_start <= event_time <= @d_end")
         .groupby(["bayer_id", "traffic_source"], as_index=False)["cost_rub"].sum()
     )
-    tot_other = other_agg.groupby("bayer_id", as_index=False)["cost_rub"].sum()
-    top_ids = tot_other.nlargest(10, "cost_rub")["bayer_id"].tolist()
+    tot_o = other_agg.groupby("bayer_id", as_index=False)["cost_rub"].sum()
+    top_ids = tot_o.nlargest(10, "cost_rub")["bayer_id"].tolist()
     other_top = other_agg[other_agg["bayer_id"].isin(top_ids)]
-    order_o = tot_other[tot_other["bayer_id"].isin(top_ids)] \
-        .sort_values("cost_rub", ascending=True)["bayer_id"].tolist()
+    ids_o = tot_o[tot_o["bayer_id"].isin(top_ids)].sort_values("cost_rub")["bayer_id"].tolist()
 
-    fig2 = px.bar(
-        other_top,
-        x="cost_rub",
-        y="bayer_id",
-        color="traffic_source",
-        orientation="h",
-        labels={
-            "cost_rub": "Затраты (₽)",
-            "bayer_id": "Bayer id",
-            "traffic_source": "Источник"
-        },
-        title="Другие источники ● TOP-10 Bayer id",
-    )
+    fig2 = go.Figure()
+    for src in sorted(other_top["traffic_source"].unique()):
+        df_src = other_top[other_top["traffic_source"] == src]
+        fig2.add_trace(go.Bar(
+            x=df_src["cost_rub"],
+            y=df_src["bayer_id"],
+            name=src,
+            orientation="h",
+            width=0.6,
+            marker=dict(line=dict(width=0)),
+        ))
     fig2.update_layout(
-        yaxis={"categoryorder": "array", "categoryarray": order_o},
+        title="Другие источники ● TOP-10 Bayer id",
+        xaxis_title="Затраты (₽)",
+        yaxis=dict(
+            title="Bayer id",
+            type="category",
+            categoryorder="array",
+            categoryarray=ids_o
+        ),
         barmode="stack",
-        bargap=0.2,
-        height=40 * len(order_o) + 100,
+        height=60 * len(ids_o) + 100,
+        margin=dict(l=120, r=20, t=50, b=50),
     )
-    fig2.update_traces(marker_line_width=0)
 
-    # ── вывод ───────────────────────────────────────────────────
-    col_a, col_b = st.columns(2, gap="large")
-    with col_a:
+    # ── выводим в две колонки ─────────────────────────────────────
+    col1, col2 = st.columns(2, gap="large")
+    with col1:
         st.plotly_chart(fig1, use_container_width=True)
-    with col_b:
+    with col2:
         st.plotly_chart(fig2, use_container_width=True)
 
 # -----------------------------------------------------------------
