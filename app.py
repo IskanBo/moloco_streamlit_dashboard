@@ -262,24 +262,25 @@ if menu == "Главная":
     #  TOP-10 Bayer id по затратам
     # ────────────────────────────────────────────────────────────────
     @st.cache_data(show_spinner=False)
-    def _prepare_bayer_dfs(df_m: pd.DataFrame, df_o: pd.DataFrame, usd_rate: float):
-        """Унифицируем колонки и переведём всё в cost_rub."""
+    def _prepare_bayer_dfs(df_m, df_o, usd_rate):
+        """Унифицируем колонки и пересчитаем cost_rub."""
         moloco = (
             df_m.rename(columns={"Bayer id": "bayer_id"})
             .assign(
-                event_time=pd.to_datetime(df_m["event_time"]).dt.date,
+                event_time=lambda d: pd.to_datetime(d["event_time"]).dt.date,
                 bayer_id=lambda d: d["bayer_id"].astype(str),
-                cost_rub=lambda d: d["cost"].map(clean_num) * usd_rate,
+                cost_rub=lambda d: d["cost"].map(clean_num) * usd_rate
             )
         )
-        other = df_o.copy()
-        other.columns = other.columns.str.replace(r"\s+", "", regex=True).str.lower()
         other = (
-            other.rename(columns={"bayerid": "bayer_id"})
+            df_o.rename(columns=lambda c: re.sub(r"\s+", "", c).lower())
+            .rename(columns={"bayerid": "bayer_id"})
             .assign(
-                event_time=lambda d: pd.to_datetime(d.get("event_date", d["event_time"])).dt.date,
+                event_time=lambda d: pd.to_datetime(
+                    d.get("event_date", d["event_time"])
+                ).dt.date,
                 bayer_id=lambda d: d["bayer_id"].astype(str),
-                cost_rub=lambda d: d["costs"].map(clean_num),
+                cost_rub=lambda d: d["costs"].map(clean_num)
             )
         )
         return moloco, other
@@ -287,73 +288,79 @@ if menu == "Главная":
 
     moloco_all, other_all = _prepare_bayer_dfs(df_m, df_o, usd_rate)
 
-    # диапазон дат
+    # выбор диапазона
     min_dt = min(moloco_all["event_time"].min(), other_all["event_time"].min())
     max_dt = max(moloco_all["event_time"].max(), other_all["event_time"].max())
 
     st.divider()
     st.header("TOP-10 Bayer id по затратам")
 
-    # выбор периода
     c1, c2 = st.columns(2, gap="medium")
     with c1:
-        d_start = st.date_input("Начало периода", min_dt, key="b_start")
+        d_start = st.date_input("Начало периода", min_dt, key="top_start")
     with c2:
-        d_end = st.date_input("Конец периода", max_dt, key="b_end")
+        d_end = st.date_input("Конец периода", max_dt, key="top_end")
     if d_start > d_end:
         st.error("Начальная дата позже конечной");
         st.stop()
 
-    # --- Top-10 Moloco ---
-    df_m_top = (
-        moloco_all[(moloco_all["event_time"] >= d_start) & (moloco_all["event_time"] <= d_end)]
+    # ── 1) Moloco ──────────────────────────────────────────────
+    moloco_agg = (
+        moloco_all
+        .query("@d_start <= event_time <= @d_end")
         .groupby("bayer_id", as_index=False)["cost_rub"].sum()
-        .nlargest(10, "cost_rub")
     )
-    # порядок: от меньшей к большей для нормального восприятия слева→справа
-    order_m = df_m_top.sort_values("cost_rub")["bayer_id"].tolist()
-
+    moloco_top = moloco_agg.nlargest(10, "cost_rub").sort_values("cost_rub", ascending=True)
     fig1 = px.bar(
-        df_m_top.assign(bayer_id=lambda d: pd.Categorical(d["bayer_id"], categories=order_m, ordered=True)),
-        x="bayer_id",
-        y="cost_rub",
-        labels={"bayer_id": "Bayer id", "cost_rub": "Затраты (₽)"},
+        moloco_top,
+        x="cost_rub",
+        y="bayer_id",
+        orientation="h",
+        labels={"cost_rub": "Затраты (₽)", "bayer_id": "Bayer id"},
+        title="Moloco ● TOP-10 Bayer id",
     )
     fig1.update_layout(
-        xaxis=dict(categoryorder="array", categoryarray=order_m),
-        bargap=0.1,  # тонкий зазор → толстые бары
-        height=400,
-        title="Moloco • TOP-10 Bayer id",
+        yaxis={"categoryorder": "array", "categoryarray": moloco_top["bayer_id"].tolist()},
+        bargap=0.2,
+        height=40 * len(moloco_top) + 100,
         showlegend=False,
     )
     fig1.update_traces(marker_line_width=0)
 
-    # --- Top-10 Other (stacked) ---
-    df_o_agg = (
-        other_all[(other_all["event_time"] >= d_start) & (other_all["event_time"] <= d_end)]
+    # ── 2) Другие источники (stacked) ────────────────────────
+    other_agg = (
+        other_all
+        .query("@d_start <= event_time <= @d_end")
         .groupby(["bayer_id", "traffic_source"], as_index=False)["cost_rub"].sum()
     )
-    tot_o = df_o_agg.groupby("bayer_id", as_index=False)["cost_rub"].sum().nlargest(10, "cost_rub")
-    order_o = tot_o.sort_values("cost_rub")["bayer_id"].tolist()
+    tot_other = other_agg.groupby("bayer_id", as_index=False)["cost_rub"].sum()
+    top_ids = tot_other.nlargest(10, "cost_rub")["bayer_id"].tolist()
+    other_top = other_agg[other_agg["bayer_id"].isin(top_ids)]
+    order_o = tot_other[tot_other["bayer_id"].isin(top_ids)] \
+        .sort_values("cost_rub", ascending=True)["bayer_id"].tolist()
 
     fig2 = px.bar(
-        df_o_agg[df_o_agg["bayer_id"].isin(order_o)]
-        .assign(bayer_id=lambda d: pd.Categorical(d["bayer_id"], categories=order_o, ordered=True)),
-        x="bayer_id",
-        y="cost_rub",
+        other_top,
+        x="cost_rub",
+        y="bayer_id",
         color="traffic_source",
-        labels={"bayer_id": "Bayer id", "cost_rub": "Затраты (₽)", "traffic_source": "Источник"},
+        orientation="h",
+        labels={
+            "cost_rub": "Затраты (₽)",
+            "bayer_id": "Bayer id",
+            "traffic_source": "Источник"
+        },
+        title="Другие источники ● TOP-10 Bayer id",
     )
     fig2.update_layout(
-        xaxis=dict(categoryorder="array", categoryarray=order_o),
-        bargap=0.1,
+        yaxis={"categoryorder": "array", "categoryarray": order_o},
         barmode="stack",
-        height=400,
-        title="Другие источники • TOP-10 Bayer id",
+        bargap=0.2,
+        height=40 * len(order_o) + 100,
     )
     fig2.update_traces(marker_line_width=0)
 
-    # выводим в две колонки
+    # ── вывод ───────────────────────────────────────────────────
     col_a, col_b = st.columns(2, gap="large")
     with col_a:
         st.plotly_chart(fig1, use_container_width=True)
